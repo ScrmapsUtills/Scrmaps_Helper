@@ -1,0 +1,127 @@
+name: Installers
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check version tag and source packaging
+        run: |
+          python -c "import os; from core import APP_VERSION; ref=os.environ['GITHUB_REF']; assert not ref.startswith('refs/tags/') or ref == 'refs/tags/v'+APP_VERSION, 'Tag must match core.APP_VERSION'"
+          python -m unittest discover -s tests -p test_release_policy.py -v
+  macos:
+    needs: validate
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            python_arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+            python_arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python_arch }}
+      - name: Create bundled application and DMG on GitHub's Mac server
+        run: python build_macos.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-macOS-${{ matrix.arch }}
+          path: |
+            release/macos/${{ matrix.arch }}/*.dmg
+            release/macos/${{ matrix.arch }}/offline-smoke-*.json
+            release/macos/${{ matrix.arch }}/release-status-*.json
+            release/macos/${{ matrix.arch }}/SHA256SUMS-*.txt
+          if-no-files-found: error
+  windows:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare build tools and verified public runtime inputs
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 nsis
+          python -m pip install pefile==2024.8.26
+          python fetch_windows_inputs.py --destination ci-inputs
+      - name: Build complete offline Setup
+        run: |
+          VERSION=$(python -c "from core import APP_VERSION; print(APP_VERSION)")
+          python build_offline.py --python-zip ci-inputs/python-3.12.10-embed-amd64.zip --wheel-dir ci-inputs/wheels --payload build-ci/windows --output "release/windows/SCRMapsHelper_Setup_${VERSION}.exe"
+          python -c "from build_offline import sources_zip; sources_zip('release/windows/SCRMapsHelper_Source.zip')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-Windows-x64
+          path: |
+            release/windows/*.exe
+            release/windows/SCRMapsHelper_Source.zip
+          if-no-files-found: error
+  windows-check:
+    needs: windows
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-Windows-x64
+          path: installer
+      - name: Install and run bundled OCR/browser self-test
+        shell: pwsh
+        run: |
+          $setup = @(Get-ChildItem installer -Filter '*.exe')
+          if ($setup.Count -ne 1) { throw 'Expected one Setup file' }
+          $install = Start-Process $setup[0].FullName -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'Setup failed' }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\SCRMapsHelper\SCRMapsHelper.exe'
+          $report = Join-Path $env:RUNNER_TEMP 'offline-smoke-Windows.json'
+          $test = Start-Process $exe -ArgumentList @('--self-test', "`"$report`"") -PassThru
+          if (-not $test.WaitForExit(120000)) { $test.Kill(); throw 'Self-test did not exit' }
+          if ($test.ExitCode -ne 0) { throw 'Self-test process failed' }
+          if (-not (Get-Content $report -Raw | ConvertFrom-Json).ok) { throw 'Offline test failed' }
+          Copy-Item $report 'offline-smoke-Windows.json'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-Windows-check
+          path: offline-smoke-Windows.json
+          if-no-files-found: error
+  release-draft:
+    needs: [macos, windows-check]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: installers
+          merge-multiple: true
+      - name: Attach installers to a draft for review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --prerelease --title "SCRMaps Helper ${GITHUB_REF_NAME}" --notes-file docs/RELEASE_NOTES.md installers/*

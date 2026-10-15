@@ -1,1 +1,59 @@
-# Scrmaps_Helper
+# SCRMaps Helper
+
+스타크래프트 스크린샷에서 인증번호와 맵 주소를 읽고, 앱 안에서 SCRMaps에
+로그인해 세이브 코드를 받아 게임에 입력하는 데스크톱 프로그램입니다.
+
+## 설치하는 사용자
+
+빌드가 완료된 GitHub Releases에서 운영체제에 맞는 설치 파일을 받으세요.
+
+| 운영체제 | 파일 | 설치 |
+| --- | --- | --- |
+| Windows 10/11 x64 | `SCRMapsHelper_Setup_<버전>.exe` | 실행 후 설치 |
+| Apple Silicon Mac | `SCRMapsHelper_<버전>_macOS_arm64.dmg` | 열어서 앱을 Applications로 이동 |
+| Intel Mac | `SCRMapsHelper_<버전>_macOS_x86_64.dmg` | 열어서 앱을 Applications로 이동 |
+
+사용자는 Python, OCR 또는 개발 도구를 설치하거나 빌드하지 않습니다.
+OCR 모델과 브라우저는 배포 파일에 포함됩니다. 사이트 로그인과 코드 발급에는
+인터넷이 필요합니다. Windows EXE와 Mac DMG는 각각의 운영체제용 파일입니다.
+
+1. 앱에서 닉네임을 입력하고 SCRMaps/Battle.net 공식 로그인을 완료합니다.
+2. 자동 저장을 시작하고 인증번호 화면의 스크린샷을 찍습니다.
+3. 발급된 코드가 보이면 게임의 코드 입력 칸을 열고 영문 입력 상태에서 F8.
+4. 코드 입력 뒤 Enter를 두 번 누릅니다. F9 또는 다른 앱 전환으로 중단합니다.
+5. X를 누르면 브라우저와 대기 작업을 정리하고 종료합니다.
+
+Mac에서는 설정의 **키 입력 권한 확인**을 누른 뒤 시스템 설정에서 입력 모니터링과
+손쉬운 사용을 허용하세요. 기능 키가 미디어 키라면 Fn+F8/F9를 사용합니다.
+앱 서명·공증 상태와 실제 게임 검증 범위는 각 빌드의 상태 파일을 확인하세요.
+
+## GitHub에 올리는 제작자
+
+**ZIP 자체를 올리지 말고 압축을 푼 내용물을 저장소 루트에 올리세요.**
+`.github/workflows` 폴더도 포함해야 자동 빌드가 실행됩니다.
+
+- `main` 또는 `master`에 올리면 GitHub 서버가 Windows Setup과 두 종류의 Mac DMG를 만듭니다.
+- Actions → **Installers** 실행 결과에서 완성된 설치 파일을 내려받을 수 있습니다.
+- `v1.4.5`처럼 앱 버전과 같은 태그를 올리면 설치 파일을 첨부한 **초안 Release**도 만듭니다.
+  검증 후 Publish하면 다른 사용자가 Releases에서 설치 파일만 받을 수 있습니다.
+- macOS 빌드는 GitHub의 Mac 서버에서 실행되므로 제작자가 Mac을 준비할 필요가 없습니다.
+- Actions가 꺼진 저장소에서는 먼저 활성화해야 합니다. 빌드가 실패하면 설치 파일은 게시하지 않습니다.
+
+현재 전달된 소스에서 GitHub 원격 빌드를 실행한 상태는 아닙니다.
+특히 Mac 설치 파일은 원격 빌드와 자체 검사가 통과한 뒤 실제로 생성됩니다.
+빌드 통과가 게임 내 키 입력, 실제 로그인, 서명·공증 검증을 대신하지는 않습니다.
+
+## 파일 구성
+
+설치 폴더에 개발 설명용 TXT를 복사하지 않습니다. 기존 버전 업데이트는 알려진
+설명 파일만 정리합니다. 일반 사용자의 AppData 폴더를 재귀적으로 지우지 않습니다.
+설정·세이브 기록·로그인 프로필은 GitHub 소스나 설치 파일에 포함하지 않습니다.
+`requirements.txt`는 제작용 의존성 목록이며, 구성요소의 라이선스 고지는 유지합니다.
+
+- Windows 데이터: `%LOCALAPPDATA%\SCRMapsHelper`
+- Mac 데이터: `~/Library/Application Support/SCRMapsHelper`
+- [배포 및 빌드 설명](docs/BUILD.md)
+- [검증 범위](docs/VALIDATION.md)
+- [구성요소 고지](THIRD_PARTY.md)
+
+SCRMaps·Blizzard·Battle.net의 공식 프로그램은 아닙니다.

@@ -1,0 +1,28 @@
+#include <windows.h>
+1 ICON "assets/helper.ico"
+1 RT_MANIFEST "offline_launcher.manifest"
+1 VERSIONINFO
+FILEVERSION 1,4,5,0
+PRODUCTVERSION 1,4,5,0
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+ BLOCK "StringFileInfo"
+ BEGIN
+  BLOCK "040904B0"
+  BEGIN
+   VALUE "FileDescription", "SCRMaps Helper\0"
+   VALUE "FileVersion", "1.4.5\0"
+   VALUE "InternalName", "SCRMapsHelper\0"
+   VALUE "OriginalFilename", "SCRMapsHelper.exe\0"
+   VALUE "ProductName", "SCRMaps Helper\0"
+   VALUE "ProductVersion", "1.4.5\0"
+  END
+ END
+ BLOCK "VarFileInfo"
+ BEGIN
+  VALUE "Translation", 0x409, 1200
+ END
+END
