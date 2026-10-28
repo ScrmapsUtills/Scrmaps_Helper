@@ -36,7 +36,7 @@ def run(output):
         profile=QWebEngineProfile()
         view=QWebEngineView();view.setPage(QWebEnginePage(profile,view));loaded=[];result=[]
         view.loadFinished.connect(loaded.append)
-        view.setHtml('<!doctype html><meta charset="utf-8"><title>Offline helper test</title><p id="ok">bundled</p><section><h3>내 세이브 코드</h3><input readonly value="9G5C4BA5R"></section>',QUrl('about:blank'))
+        view.setHtml('<!doctype html><meta charset="utf-8"><title>Offline helper test</title><p id="ok">bundled</p><section><h3>내 세이브 코드</h3><div class="hud-code"><span class="hud-code-group">9G5</span><span aria-hidden="true"> - </span><span class="hud-code-group">C4B</span><span aria-hidden="true"> - </span><span class="hud-code-group">A5R</span></div></section>',QUrl('about:blank'))
         deadline=time.monotonic()+20
         while not loaded and time.monotonic()<deadline:
             app.processEvents();time.sleep(.01)
@@ -51,7 +51,7 @@ def run(output):
         deadline=time.monotonic()+5
         while not codes and time.monotonic()<deadline:app.processEvents();time.sleep(.01)
         if len(codes)!=1 or json.loads(codes[0])!=['9G5C4BA5R']:raise RuntimeError('Bundled save-result reader failed: '+repr(codes))
-        report['checks'].append('Save code extraction from a readonly result field')
+        report['checks'].append('Save code extraction from hud-code groups with visible dash separators')
         view.close();view.deleteLater()
         QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
         profile.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)

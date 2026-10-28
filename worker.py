@@ -1,7 +1,7 @@
 from __future__ import annotations
 import copy, queue, threading, time
 from pathlib import Path
-from core import History, project_slug, sha256_file, valid_code
+from core import History, project_slug, sha256_file, valid_code, valid_save_code, verified_save, SAVE_RESULT_REVISION
 from web_gateway import Gateway, LoginRequired, fetch_maps
 from paths import DATA
 
@@ -169,7 +169,7 @@ class Worker(threading.Thread):
         if cancel.is_set() or self.closing.is_set():return
         self.emit('stage',phase='submitting',text='사이트에 보관된 최근 세이브 코드를 읽고 있어요…')
         try:
-            code=self.gateway.read_current(slug,lambda:cancel.is_set() or self.closing.is_set())
+            code=valid_save_code(self.gateway.read_current(slug,lambda:cancel.is_set() or self.closing.is_set()),slug,auth)
         except LoginRequired as exc:
             self.history.put(slug,nick,auth,'recover_login',detail=str(exc),image_hash=image_hash)
             self.remember_login(auth,cfg,image_hash,cancel,recover=True)
@@ -179,7 +179,7 @@ class Worker(threading.Thread):
             self.log(str(exc));self.emit('pending',auth=auth,cfg=cfg,image_hash=image_hash)
             self.emit('stage',phase='review',text=str(exc))
         else:
-            self.history.put(slug,nick,auth,'recovered',save=code,detail='Current account latest save read from site; no new POST.',image_hash=image_hash)
+            self.history.put(slug,nick,auth,'recovered',save=code,detail='Current account latest save read from site; no new POST.',image_hash=image_hash,result_revision=SAVE_RESULT_REVISION)
             self.emit('save',code=code,project=slug,nickname=nick,source='existing')
             self.log('추가 제출 없이 사이트에 보관된 최근 세이브 코드를 읽었습니다.')
         finally:self.emit('history',rows=self.history.list())
@@ -198,10 +198,10 @@ class Worker(threading.Thread):
         if not self.active_nickname:self.active_nickname=nick
         safe_resume=resuming and previous and previous['status']=='login'
         if previous and not retry and not safe_resume:
-            if previous["status"] in {"ok","recovered"}:
+            if verified_save(previous):
                 self.emit("save", code=previous["save"], project=slug, nickname=nick,source='existing' if previous['status']=='recovered' else 'issued')
                 self.log("이미 처리한 인증번호입니다. 보관된 세이브 코드를 표시했습니다.")
-            elif previous['status']=='recover_login' or (previous['status'] in {'check','submitting'} and cfg.get('auto') and hasattr(self.gateway,'read_current')):
+            elif previous['status']=='recover_login' or (previous['status'] in {'ok','recovered','check','submitting'} and cfg.get('auto',True) and hasattr(self.gateway,'read_current')):
                 self.recover_previous(auth,cfg,image_hash,cancel)
             elif previous['status']=='login':
                 self.remember_login(auth,cfg,image_hash,cancel)
@@ -216,7 +216,7 @@ class Worker(threading.Thread):
         self.log(f"/{slug}에 인증번호를 제출하는 중입니다…")
         self.emit("stage",phase="submitting",text=f"/{slug}에서 세이브 코드를 가져오고 있어요…")
         try:
-            code = self.gateway.submit(slug, auth, lambda: cancel.is_set() or self.closing.is_set())
+            code = valid_save_code(self.gateway.submit(slug, auth, lambda: cancel.is_set() or self.closing.is_set()),slug,auth)
         except LoginRequired as exc:
             self.history.put(slug, nick, auth, "login", detail=str(exc), image_hash=image_hash)
             self.remember_login(auth,cfg,image_hash,cancel)
@@ -235,7 +235,7 @@ class Worker(threading.Thread):
             self.emit("stage",phase="review",text=str(exc))
         else:
             existing=bool(getattr(self.gateway,'last_result_existing',False))
-            self.history.put(slug, nick, auth, "recovered" if existing else "ok", save=code, image_hash=image_hash)
+            self.history.put(slug, nick, auth, "recovered" if existing else "ok", save=code, image_hash=image_hash,result_revision=SAVE_RESULT_REVISION)
             self.emit("save", code=code, project=slug, nickname=nick,source='existing' if existing else 'issued')
             self.emit("connection",connected=True)
             self.log("발급된 세이브 코드를 보관했습니다.")

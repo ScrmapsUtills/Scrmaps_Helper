@@ -8,11 +8,11 @@ OutFile "@OUTPUT@"
 RequestExecutionLevel user
 ManifestDPIAware true
 SetCompressor /SOLID lzma
-BrandingText "SCRMaps Helper 1.4.7"
-VIProductVersion "1.4.7.0"
+BrandingText "SCRMaps Helper 1.4.9"
+VIProductVersion "1.4.9.0"
 VIAddVersionKey /LANG=1042 "ProductName" "SCRMaps Helper"
 VIAddVersionKey /LANG=1042 "FileDescription" "SCRMaps Helper 배포 파일 정리 업데이트"
-VIAddVersionKey /LANG=1042 "FileVersion" "1.4.7"
+VIAddVersionKey /LANG=1042 "FileVersion" "1.4.9"
 VIAddVersionKey /LANG=1042 "LegalCopyright" "Component copyrights: see installed notices"
 !define MUI_ICON "assets/helper.ico"
 !define MUI_WELCOMEPAGE_TITLE "SCRMaps Helper 배포 정리 업데이트"
@@ -40,7 +40,7 @@ Function .onInit
  ${If} $0 != "1.4.2"
  ${AndIf} $0 != "1.4.3"
  ${AndIf} $0 != "1.4.4"
- ${AndIf} $0 != "1.4.7"
+ ${AndIf} $0 != "1.4.9"
   MessageBox MB_OK|MB_ICONSTOP "SCRMaps Helper 1.4.2 Setup을 먼저 설치한 뒤 실행하세요."
   Abort
  ${EndIf}
@@ -81,7 +81,7 @@ Section "배포 정리 업데이트"
  StrCpy $RollbackFailed 0
  @INSTALL@
  ClearErrors
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "DisplayVersion" "1.4.7"
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "DisplayVersion" "1.4.9"
  IfErrors rollback
  @CLEANUP@
  Goto done

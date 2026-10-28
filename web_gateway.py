@@ -10,7 +10,7 @@ import urllib.request
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
-from core import BASE, project_slug, valid_code
+from core import BASE, project_slug, valid_code, valid_save_code
 
 
 class LoginRequired(RuntimeError):
@@ -52,64 +52,88 @@ def fetch_maps():
     return [{"slug":slug,"name":name} for slug,name in parser.cards.items()]
 
 
-# Kept separate to test against DOM fixtures reconstructed from the observed form.
-RESULT_JS = r"""() => {
-  const norm=s=>s.replace(/\s+/g,'').replace(/[:：]/g,'').toLowerCase();
-  const labels = new Set(['내 세이브 코드','발급된 세이브 코드','발급 코드','Your save code','My save code','Save code'].map(norm));
-  const valid=s=>/^[A-HJ-NP-Z2-9]{5,64}$/.test(s.replace(/\s+/g,'').toUpperCase());
-  const visible=e=>e.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
-  const value=e=>(e.matches('input,textarea')?e.value:e.textContent).replace(/\s+/g,'').toUpperCase();
-  const out = new Set();
-  for (const label of document.querySelectorAll('p,h1,h2,h3,h4,h5,label,legend,span,div')) {
-    if (!visible(label)||label.textContent.length>120||!labels.has(norm(label.textContent))) continue;
-    let box = label.parentElement;
-    for (let depth=0; box && depth<5; depth++,box=box.parentElement) {
-      if (box===document.body || box.textContent.length > 8000) break;
-      const semantic=Array.from(box.querySelectorAll('code,pre,samp,output,input[readonly],textarea[readonly],[data-save-code]'))
-        .filter(e=>visible(e)&&valid(value(e)));
-      const outer=semantic.filter(e=>!semantic.some(p=>p!==e&&p.contains(e)));
-      if(outer.length){outer.forEach(e=>out.add(value(e)));break;}
-      const candidates=[];
-      for(const e of box.querySelectorAll('p,span,div,button')){
-        if(!visible(e)||e.querySelector('input:not([readonly]),textarea:not([readonly]),form'))continue;
-        if(e.querySelectorAll('p').length>1)continue;
-        const clone=e.cloneNode(true);
-        for(const control of clone.querySelectorAll('button,svg,input,textarea')){
-          if(!control.matches('button')||!/^[A-HJ-NP-Z2-9\s]+$/.test(control.textContent))control.remove();
-        }
-        const text=clone.textContent.replace(/\s+/g,'').toUpperCase();
-        if(valid(text))candidates.push({e,text});
-      }
-      const maximal=candidates.filter(({e})=>!candidates.some(p=>p.e!==e&&p.e.contains(e)));
-      if(maximal.length){maximal.forEach(p=>out.add(p.text));break;}
-    }
+# Share the exact card boundary between DOM reads and copy-button capture.
+# Only following siblings of a recognised result label belong to its result.
+RESULT_SCOPE_JS = r"""() => {
+ const norm=s=>String(s).replace(/\s+/g,'').replace(/[:：]/g,'').toLowerCase();
+ const labels=new Set(['내 세이브 코드','발급된 세이브 코드','발급 코드','Your save code','My save code','Save code'].map(norm));
+ const visible=e=>!!e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden'&&!e.closest('[hidden],[aria-hidden="true"]');
+ const scopes=[];
+ for(const label of document.querySelectorAll('p,h1,h2,h3,h4,h5,label,legend,span,div')){
+  if(!visible(label)||label.textContent.length>120||!labels.has(norm(label.textContent)))continue;
+  if(label.closest('a,button,nav,header,footer,form'))continue;
+  if(label.querySelector('input,textarea,pre,code,button,output,[data-save-code]'))continue;
+  let branch=label;
+  for(let depth=0;branch.parentElement&&depth<4;depth++,branch=branch.parentElement){
+   const box=branch.parentElement;
+   if(box.matches('body,html,main,form,nav,header,footer,table'))break;
+   const following=[];
+   for(let e=branch.nextElementSibling;e;e=e.nextElementSibling)if(visible(e))following.push(e);
+   if(following.length){scopes.push(following);break;}
+   if(box.matches('section,article,[role="region"]')||box.classList.contains('hud-panel'))break;
   }
-  return Array.from(out);
+ }
+ return {scopes,visible};
 }"""
 
+# The site's .hud-code / .hud-code-group styles show groups separated by dashes.
+SAVE_CODE_NORMALIZE_JS = r"""raw => {
+ const text=String(raw).trim().toUpperCase();
+ if(!/^[A-HJ-NP-Z2-9]+(?:[\s\-\u2010-\u2015\u2212]+[A-HJ-NP-Z2-9]+)*$/.test(text))return '';
+ const code=text.replace(/[\s\-\u2010-\u2015\u2212]+/g,'');
+ const slug=(location.pathname.split('/').filter(Boolean)[0]||'').replace(/[\s\-\u2010-\u2015\u2212]+/g,'').toUpperCase();
+ return /^[A-HJ-NP-Z2-9]{5,64}$/.test(code)&&!['SUBMIT','CANCEL','SHARE','HTTPS','SCRMAPS',slug].includes(code)?code:'';
+}"""
+
+RESULT_JS = r"""() => {
+ const {scopes,visible}=(SCOPE_FUNCTION)();
+ const normalize=(NORMALIZE_FUNCTION);
+ const value=e=>normalize(e.matches('input,textarea')?e.value:e.textContent);
+ const excluded='a,button,nav,header,footer,form,table,[role="navigation"],script,style';
+ const valid=s=>Boolean(s);
+ const out=new Set();
+ for(const scope of scopes){
+  const all=scope.flatMap(root=>[root,...root.querySelectorAll('*')]);
+  const safe=e=>!e.matches('input[name="code"],textarea[name="code"]')&&visible(e)&&!e.closest(excluded)&&!e.querySelector(excluded.replace('button,',''))&&!e.querySelector('input:not([readonly]),textarea:not([readonly])');
+  const semantic=all.filter(e=>e.matches('code,pre,samp,output,input[readonly],textarea[readonly],[data-save-code],.hud-code')&&safe(e)&&valid(value(e)));
+  if(semantic.length){semantic.filter(e=>!semantic.some(p=>p!==e&&p.contains(e))).forEach(e=>out.add(value(e)));continue;}
+  const candidates=[];
+  for(const e of all){
+   if(!safe(e)||!e.matches('[class*="font-mono"],[class*="tracking-widest"],[data-save-code],.hud-code,.hud-code-group'))continue;
+   const clone=e.cloneNode(true);clone.querySelectorAll('button,svg').forEach(c=>c.remove());
+   // Inline character chunks can be joined; unrelated block text cannot.
+   if(clone.querySelector('p,div,section,article,h1,h2,h3,h4,ul,ol,input,textarea'))continue;
+   const text=normalize(clone.textContent);
+   if(valid(text))candidates.push({e,text});
+  }
+  candidates.filter(({e})=>!candidates.some(p=>p.e!==e&&p.e.contains(e))).forEach(p=>out.add(p.text));
+ }
+ return Array.from(out);
+}""".replace('SCOPE_FUNCTION',RESULT_SCOPE_JS).replace('NORMALIZE_FUNCTION',SAVE_CODE_NORMALIZE_JS)
 
 COPY_RESULT_JS = r"""(token => {
- const norm=s=>s.replace(/\s+/g,'').replace(/[:：]/g,'').toLowerCase();
- const labels=new Set(['내 세이브 코드','발급된 세이브 코드','발급 코드','Your save code','My save code','Save code'].map(norm));
- let button=null;
- for(const label of document.querySelectorAll('p,h1,h2,h3,h4,h5,label,legend,span,div')){
-  if(!label.getClientRects().length||label.textContent.length>120||!labels.has(norm(label.textContent)))continue;
-  for(let box=label.parentElement,depth=0;box&&box!==document.body&&depth<5;box=box.parentElement,depth++){
-   const choices=Array.from(box.querySelectorAll('button')).filter(e=>e.getClientRects().length&&!e.disabled&&!(e.type==='submit'&&e.closest('form'))&&/복사|copy/i.test((e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+e.textContent));
-   if(choices.length===1){button=choices[0];break;}
+ const {scopes,visible}=(SCOPE_FUNCTION)();
+ const choices=new Set();
+ for(const scope of scopes)for(const root of scope){
+  for(const e of [root,...root.querySelectorAll('button')]){
+   if(!e.matches('button')||!visible(e)||e.disabled||e.closest('a,nav,header,footer,table')||(e.type==='submit'&&e.closest('form')))continue;
+   const names=[e.getAttribute('aria-label'),e.getAttribute('title'),e.textContent].filter(s=>s&&s.trim()).map(s=>s.trim());
+   const text=names.join(' ');
+   if(/링크|주소|URL|link|address|share|공유/i.test(text))continue;
+   if(names.length&&names.every(s=>/^(?:(?:세이브\s*코드|코드|save\s*code|code)\s*)?(?:복사|copy)(?:\s*(?:세이브\s*코드|코드|save\s*code|code))?$/i.test(s)))choices.add(e);
   }
-  if(button)break;
  }
- if(!button||!navigator.clipboard)return false;
+ if(choices.size!==1||!navigator.clipboard)return false;
+ const button=Array.from(choices)[0],normalize=(NORMALIZE_FUNCTION);
  try{
   window.__scrmapsRestoreCopy?.();
   const clip=navigator.clipboard,descriptor=Object.getOwnPropertyDescriptor(clip,'writeText');
-  const capture=text=>{const code=String(text).replace(/\s+/g,'').toUpperCase();if(/^[A-HJ-NP-Z2-9]{5,64}$/.test(code))window.__scrmapsCopiedCode={token,code};return Promise.resolve();};
+  const capture=text=>{const code=normalize(text);if(code)window.__scrmapsCopiedCode={token,code};return Promise.resolve();};
   const restore=()=>{if(clip.writeText!==capture)return;if(descriptor)Object.defineProperty(clip,'writeText',descriptor);else delete clip.writeText;};
   Object.defineProperty(clip,'writeText',{configurable:true,writable:true,value:capture});
   window.__scrmapsRestoreCopy=restore;setTimeout(restore,1200);button.click();return true;
  }catch(_error){return false;}
-})"""
+})""".replace('SCOPE_FUNCTION',RESULT_SCOPE_JS).replace('NORMALIZE_FUNCTION',SAVE_CODE_NORMALIZE_JS)
 
 class Gateway:
     def __init__(self, profile):
@@ -214,7 +238,7 @@ class Gateway:
                 continue
             codes = self.page.evaluate(RESULT_JS)
             if len(codes) == 1:
-                return valid_code(codes[0])
+                return valid_save_code(codes[0],slug,auth)
             if len(codes) > 1:
                 raise SiteError("세이브 코드가 여러 개 발견되었습니다. 브라우저에서 확인하세요.")
         raise SiteError("제출 후 세이브 코드를 확인하지 못했습니다. 브라우저 결과를 확인하세요. 자동 재제출은 하지 않습니다.")

@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt,QTimer,QUrl,QLockFile
 from PySide6.QtGui import QDesktopServices,QFont,QIcon,QPixmap,QImageReader
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,
  QTabWidget,QComboBox,QLineEdit,QFrame,QFileDialog,QMessageBox,QCheckBox,QPlainTextEdit,QTableWidget,QTableWidgetItem,QHeaderView,QScrollArea)
-from core import NewFiles,project_slug,valid_code,write_json,IMAGE_EXTS,APP_VERSION
+from core import NewFiles,project_slug,valid_code,valid_save_code,verified_save,write_json,IMAGE_EXTS,APP_VERSION
 from paths import ROOT,DATA,default_folder
 from worker import Worker
 from web_gateway import fetch_maps
@@ -249,6 +249,7 @@ class Window(QMainWindow):
         except ValueError as exc:QMessageBox.information(self,'번호 확인',str(exc))
 
     def display_save(self,code,project,nickname,source='issued'):
+        code=valid_save_code(code,project)
         self.typer.stop()
         title='사이트에 보관된 세이브 코드' if source=='existing' else '발급된 세이브 코드'
         self.current_save=code;self.code.setText(code);self.save_label.setText(f'{title} · /{project} · {nickname}')
@@ -299,7 +300,10 @@ class Window(QMainWindow):
         if not 0<=row<len(self.rows):return
         self.ocr_preview.clear();self.auth_candidates.clear();self.auth_candidates.hide()
         item=self.rows[row];self.auth.setText(item['auth']);self.review_project.setText(item['project']);self.pending_hash=item['image_hash'];self.pending_cfg={'project':item['project'],'nickname':item['nickname']}
-        if item['save']:self.display_save(item['save'],item['project'],item['nickname'],source='existing' if item['status']=='recovered' else 'issued')
+        if verified_save(item):self.display_save(item['save'],item['project'],item['nickname'],source='existing' if item['status']=='recovered' else 'issued')
+        elif item['status'] in {'ok','recovered','check','submitting'}:
+            self.clear_code();self.pending_cfg['auto']=True
+            self.command('submit',{'auth':item['auth'],'cfg':self.pending_cfg,'image_hash':item['image_hash']})
         elif item['status'] in {'login','recover_login'}:self.stage('login','로그인이 끝나면 이 번호를 자동으로 처리해요.');self.show_browser()
         else:self.clear_code();self.stage('review',item['detail'] or '사이트의 이전 처리 결과를 확인해 주세요.')
 
@@ -328,7 +332,12 @@ class Window(QMainWindow):
                 elif kind=='history':
                     self.rows=p['rows'];self.table.setRowCount(len(self.rows));names={'ok':'발급 완료','recovered':'사이트 코드 복구','recover_login':'코드 복구 · 로그인 대기','login':'로그인 대기','check':'결과 확인','submitting':'처리 확인','paused':'중지됨'}
                     for i,item in enumerate(self.rows):
-                        for j,key in enumerate(['created','project','nickname','save','status']):self.table.setItem(i,j,QTableWidgetItem(names.get(item[key],item[key]) if key=='status' else item[key]))
+                        for j,key in enumerate(['created','project','nickname','save','status']):
+                            value=names.get(item[key],item[key]) if key=='status' else item[key]
+                            if item['status'] in {'ok','recovered'} and not verified_save(item):
+                                if key=='save':value='사이트에서 다시 확인'
+                                elif key=='status':value='이전 버전 코드 · 재확인'
+                            self.table.setItem(i,j,QTableWidgetItem(value))
                 elif kind=='fatal':QMessageBox.critical(self,'프로그램 오류',p['text'])
         except queue.Empty:pass
 

@@ -11,7 +11,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 BASE = "https://www.scrmaps.com"
-APP_VERSION = "1.4.7"
+APP_VERSION = "1.4.9"
+SAVE_RESULT_REVISION = 2
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".pcx", ".tga", ".webp"}
 CODE_RE = re.compile(r"[A-HJ-NP-Z2-9]{5,64}\Z")
 RESERVED = {"login", "logout", "dashboard", "api", "maps", "save-system", "terms", "privacy", "log", "users", "blog", "contact", "creator"}
@@ -27,6 +28,32 @@ def valid_code(value: str) -> str:
     if not CODE_RE.fullmatch(result):
         raise ValueError("코드는 영문 대문자와 2~9로 구성되어야 합니다. 0·1·I·O는 자동 교정하지 않습니다.")
     return result
+
+
+def valid_save_code(value: str, project="", auth="") -> str:
+    """Validate result data separately from the OCR auth and map address."""
+    if not isinstance(value,str):
+        raise ValueError("세이브 코드가 문자열이 아니에요.")
+    raw = value.strip().upper()
+    separators = r"[\s\-\u2010-\u2015\u2212]+"
+    # Formatting is allowed only between actual code characters. A URL is
+    # rejected before normalization, rather than stripped down to its letters.
+    if not re.fullmatch(r"[A-HJ-NP-Z2-9]+(?:" + separators + r"[A-HJ-NP-Z2-9]+)*", raw):
+        raise ValueError("세이브 코드 본문을 읽지 못했어요. 코드의 영문·숫자와 구분자를 확인해 주세요.")
+    result = valid_code(re.sub(separators, "", raw))
+    if result in {re.sub(separators, "", code_text(project)), re.sub(separators, "", code_text(auth)), "SUBMIT", "CANCEL", "SHARE", "HTTPS", "SCRMAPS"}:
+        raise ValueError("웹주소·맵 이름·인증번호는 세이브 코드로 사용할 수 없어요. 사이트 결과를 다시 확인해 주세요.")
+    return result
+
+
+def verified_save(row) -> bool:
+    if not row or row.get('result_revision', 0) != SAVE_RESULT_REVISION:
+        return False
+    try:
+        valid_save_code(row['save'], row['project'], row['auth'])
+        return row['status'] in {'ok', 'recovered'}
+    except (ValueError, KeyError, TypeError):
+        return False
 
 
 def project_slug(value: str) -> str:
@@ -126,6 +153,8 @@ class History:
             auth TEXT NOT NULL, save TEXT DEFAULT '', status TEXT NOT NULL,
             detail TEXT DEFAULT '', image_hash TEXT DEFAULT '', created TEXT DEFAULT (datetime('now','localtime')),
             UNIQUE(project,nickname,auth))""")
+        if 'result_revision' not in {row[1] for row in self.db.execute('PRAGMA table_info(runs)')}:
+            self.db.execute('ALTER TABLE runs ADD COLUMN result_revision INTEGER NOT NULL DEFAULT 0')
         self.db.commit()
 
     def get(self, project, nickname, auth):
@@ -134,11 +163,11 @@ class History:
             row=self.db.execute('SELECT * FROM runs WHERE lower(project)=lower(?) AND nickname=? AND auth=? ORDER BY id DESC LIMIT 1',(project,nickname,auth)).fetchone()
         return dict(row) if row else None
 
-    def put(self, project, nickname, auth, status, save="", detail="", image_hash=""):
-        self.db.execute("""INSERT INTO runs(project,nickname,auth,status,save,detail,image_hash) VALUES(?,?,?,?,?,?,?)
+    def put(self, project, nickname, auth, status, save="", detail="", image_hash="", result_revision=0):
+        self.db.execute("""INSERT INTO runs(project,nickname,auth,status,save,detail,image_hash,result_revision) VALUES(?,?,?,?,?,?,?,?)
             ON CONFLICT(project,nickname,auth) DO UPDATE SET status=excluded.status, save=excluded.save,
-            detail=excluded.detail,image_hash=excluded.image_hash,created=datetime('now','localtime')""",
-            (project,nickname,auth,status,save,detail[:1000],image_hash))
+            detail=excluded.detail,image_hash=excluded.image_hash,result_revision=excluded.result_revision,created=datetime('now','localtime')""",
+            (project,nickname,auth,status,save,detail[:1000],image_hash,result_revision))
         self.db.commit()
 
     def list(self, project=None, nickname=None):

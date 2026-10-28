@@ -153,3 +153,11 @@ Actual SCRMaps account submission and native Windows installation/execution,
 macOS packaging and production code signing were not performed.
 
 An already-recorded server response also reads the saved code with a GET rather than sending another POST.
+
+## 1.4.8 결과 추출 회귀 검사
+
+결과 영역 범위, 링크/일반 문구/숨긴 값 제외, 링크 복사 버튼 미실행, 복수 후보 처리, 이전 결과 버전 표시와 GET 재확인, 성공 문구와 코드 본문 갱신 순서가 다른 경우를 추가했습니다. Qt/로컬 HTTP 통합 검사를 실행합니다. 실제 계정 발급 및 Windows 실기는 수행하지 않았습니다.
+
+## 1.4.9 묶음 코드 검사
+
+사이트 전용 코드 영역의 세 글자 묶음과 표시용 하이픈을 재현합니다. DOM 읽기·복사 결과·Python 결과 검증의 구분자 처리를 검사하고 앱과 기록에는 구분자가 없는 값이 전달되는지 확인합니다. 인증번호의 기존 엄격한 검증은 유지합니다.

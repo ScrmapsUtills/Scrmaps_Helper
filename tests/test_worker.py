@@ -140,6 +140,47 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(self.w.gateway.calls,0)
         self.assertEqual(self.w.history.get('testmap','PlayerA','ZQWMD4FFZ')['status'],'recovered')
 
+    def test_old_success_cache_is_read_again_without_a_new_post(self):
+        self.w.history.put('testmap','PlayerA','ZQWMD4FFZ','recovered',save='ASDDSA')
+        reads=[]
+        self.w.gateway.read_current=lambda slug,cancelled:reads.append(slug) or '9G5C4BA5R'
+        self.w.submit('ZQWMD4FFZ',dict(self.cfg,auto=True))
+        self.assertEqual(reads,['testmap'])
+        self.assertEqual(self.w.gateway.calls,0)
+        row=self.w.history.get('testmap','PlayerA','ZQWMD4FFZ')
+        self.assertEqual(row['save'],'9G5C4BA5R')
+        from core import verified_save
+        self.assertTrue(verified_save(row))
+
+    def test_grouped_save_is_stored_and_emitted_as_typable_code(self):
+        self.w.gateway.submit=lambda *args:'9G5 - C4B - A5R'
+        self.w.submit('ZQWMD4FFZ',self.cfg)
+        self.assertEqual(self.w.history.get('testmap','PlayerA','ZQWMD4FFZ')['save'],'9G5C4BA5R')
+        events=[]
+        while not self.w.events.empty():events.append(self.w.events.get())
+        self.assertEqual([p['code'] for kind,p in events if kind=='save'],['9G5C4BA5R'])
+
+    def test_map_address_and_auth_are_never_saved_as_result_data(self):
+        for bad in ['https://www.scrmaps.com/testmap','TESTMAP','ZQWMD4FFZ']:
+            with self.subTest(bad=bad):
+                self.w.gateway.submit=lambda *args:bad
+                self.w.submit('ZQWMD4FFZ',self.cfg,retry=True)
+                row=self.w.history.get('testmap','PlayerA','ZQWMD4FFZ')
+                self.assertEqual(row['status'],'check')
+                self.assertEqual(row['save'],'')
+        events=[]
+        while not self.w.events.empty():events.append(self.w.events.get())
+        self.assertFalse(any(kind=='save' for kind,payload in events))
+
+    def test_bad_current_result_does_not_replace_or_display_an_old_cache(self):
+        self.w.history.put('testmap','PlayerA','ZQWMD4FFZ','recovered',save='ASDDSA')
+        self.w.gateway.read_current=lambda *args:'TESTMAP'
+        self.w.submit('ZQWMD4FFZ',dict(self.cfg,auto=True))
+        events=[]
+        while not self.w.events.empty():events.append(self.w.events.get())
+        self.assertFalse(any(kind=='save' for kind,payload in events))
+        self.assertEqual(self.w.gateway.calls,0)
+
     def test_login_completion_automatically_resumes_once(self):
         self.w.gateway.error=LoginRequired('login')
         self.w.submit('ZQWMD4FFZ',self.cfg)

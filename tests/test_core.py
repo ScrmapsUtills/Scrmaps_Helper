@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import sqlite3
 import unittest
 from pathlib import Path
 
@@ -23,6 +24,16 @@ class ValidationTests(unittest.TestCase):
         for value in ("ZQWMD4FF0","ZQWMD4FF1","ZQWMD4FFI","ZQWMD4FFO","ABCD","A"*65,"ABCDE;DELETE"):
             with self.subTest(value=value),self.assertRaises(ValueError):
                 valid_code(value)
+
+    def test_save_display_separators_are_removed_without_changing_auth_validation(self):
+        from core import valid_save_code
+        for text in ['9G5 - C4B - A5R','9G5-C4B-A5R','9G5 – C4B – A5R','9G5 — C4B — A5R','9G5 − C4B − A5R','9g5  c4b  a5r']:
+            with self.subTest(text=text):self.assertEqual(valid_save_code(text),'9G5C4BA5R')
+        with self.assertRaises(ValueError):valid_code('9G5-C4B-A5R')
+        for text in ['https://www.scrmaps.com/ABC-DEF','/ABC-DEF','ABC_DEF','-ABCDE','ABCDE-', '9G5-C4B-A50','9G5-C4B-A51','9G5-C4B-A5I','9G5-C4B-A5O']:
+            with self.subTest(text=text),self.assertRaises(ValueError):valid_save_code(text)
+        with self.assertRaises(ValueError):valid_save_code('ABC - DEF',project='abc-def')
+        with self.assertRaises(ValueError):valid_save_code('9G5 - C4B - A5R',auth='9G5C4BA5R')
 
     def test_roi(self):
         self.assertEqual(validate_roi([0,.3,1,.42]),(0,.3,1,.42))
@@ -49,6 +60,20 @@ class HistoryTests(unittest.TestCase):
             h.close()
             h=History(Path(directory)/"history.db")
             self.assertEqual(len(h.list("map1","PlayerA")),1)
+            h.close()
+
+    def test_legacy_database_retains_data_but_requires_a_site_recheck(self):
+        from core import verified_save,SAVE_RESULT_REVISION
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'history.db'
+            db=sqlite3.connect(path)
+            db.execute("CREATE TABLE runs(id INTEGER PRIMARY KEY,project TEXT,nickname TEXT,auth TEXT,save TEXT,status TEXT,detail TEXT DEFAULT '',image_hash TEXT DEFAULT '',created TEXT DEFAULT '',UNIQUE(project,nickname,auth))")
+            db.execute("INSERT INTO runs(project,nickname,auth,save,status) VALUES('testmap','PlayerA','ZQWMD4FFZ','ASDDSA','ok')")
+            db.commit();db.close()
+            h=History(path);row=h.get('testmap','PlayerA','ZQWMD4FFZ')
+            self.assertEqual(row['save'],'ASDDSA');self.assertFalse(verified_save(row))
+            h.put('testmap','PlayerA','ZQWMD4FFZ','recovered',save='9G5C4BA5R',result_revision=SAVE_RESULT_REVISION)
+            self.assertTrue(verified_save(h.get('testmap','PlayerA','ZQWMD4FFZ')))
             h.close()
 
 

@@ -11,7 +11,7 @@ from web_gateway import Gateway, SiteError, LoginRequired, RESULT_JS
 
 HTML='''<!doctype html><meta charset="utf-8"><h1>Fixture</h1>
 <form><input name="code" minlength="9" maxlength="9"><p id="message"></p><button type="submit">인증 코드 등록</button></form>
-<section><p>내 세이브 코드</p><p id="save">AAAAABBBB</p><p>다음 게임에서 입력하세요</p></section>
+<section><p>내 세이브 코드</p><p class="font-mono" id="save">AAAAABBBB</p><p>다음 게임에서 입력하세요</p></section>
 <script>document.querySelector('form').onsubmit=async e=>{e.preventDefault();
  const r=await fetch(location.pathname,{method:'POST',body:document.querySelector('input').value});
  const data=await r.json(); const m=document.querySelector('#message');
@@ -66,11 +66,11 @@ class BrowserTests(unittest.TestCase):
             self.g.submit("testmap","ZQWMD4FFZ")
 
     def test_result_selector_ignores_unrelated_code(self):
-        self.page.set_content('<p>ZZZZZ9999</p><section><p>내 세이브 코드</p><p>9 G5C 4BA5R</p></section>')
+        self.page.set_content('<p>ZZZZZ9999</p><section><p>내 세이브 코드</p><p class="font-mono">9 G5C 4BA5R</p></section>')
         self.assertEqual(self.page.evaluate(RESULT_JS),["9G5C4BA5R"])
 
     def test_result_selector_handles_inline_code_chunks(self):
-        self.page.set_content('<section><p>내 세이브 코드</p><p><span>9G5C4</span> <span>BA5RZ</span> <span>ABCDE</span></p></section>')
+        self.page.set_content('<section><p>내 세이브 코드</p><p class="font-mono"><span>9G5C4</span> <span>BA5RZ</span> <span>ABCDE</span></p></section>')
         self.assertEqual(self.page.evaluate(RESULT_JS),["9G5C4BA5RZABCDE"])
 
     def test_cancel_before_click_never_posts(self):

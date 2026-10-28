@@ -2,7 +2,7 @@
 from __future__ import annotations
 import json,secrets,time,re
 from urllib.parse import urlsplit
-from core import BASE,project_slug,valid_code
+from core import BASE,project_slug,valid_code,valid_save_code
 from web_gateway import LoginRequired,SiteError,RESULT_JS,COPY_RESULT_JS
 
 SNAPSHOT_JS=r"""(() => {
@@ -79,7 +79,7 @@ class EmbeddedGateway:
             if not codes and state.get('copied',{}):
                 copied=state['copied']
                 if copied.get('token')==token:codes=[copied['code']]
-            if len(codes)==1:return valid_code(codes[0])
+            if len(codes)==1:return valid_save_code(codes[0],slug)
             if len(codes)>1:raise SiteError('보관된 세이브 코드가 여러 개예요.')
             if not copy_tried:copy_tried=bool(self.rpc('evaluate',{'script':COPY_RESULT_JS+'('+json.dumps(token)+')'},10))
             if cancelled() or time.monotonic()>=deadline:raise SiteError('사이트에 보관된 세이브 코드를 찾지 못했어요.')
@@ -130,15 +130,15 @@ class EmbeddedGateway:
                 codes=state.get('codes',[])
                 copied=state.get('copied') or {}
                 if not codes and copied.get('token')==token:codes=[copied['code']]
-                fresh=bool(issued_at is not None or set(codes)-baseline)
+                fresh=bool(set(codes)-baseline or (issued_at is not None and refreshed))
                 if posted and fresh and not state.get('disabled'):
-                    if len(codes)==1:return valid_code(codes[0])
+                    if len(codes)==1:return valid_save_code(codes[0],slug,auth)
                     if len(codes)>1:raise SiteError('발급 코드가 여러 개여서 하나로 구분하지 못했어요.')
                 if posted and issued_at is not None and not codes and not copy_tried:
                     copy_tried=bool(self.rpc('evaluate',{'script':COPY_RESULT_JS+'('+json.dumps(token)+')'},10))
                 # A successful server action can update the form before the
                 # result card is re-rendered. Refresh the GET once, never POST.
-                if posted and issued_at is not None and not codes and not refreshed and time.monotonic()-issued_at>=.8:
+                if posted and issued_at is not None and (not codes or not fresh) and not refreshed and time.monotonic()-issued_at>=.8:
                     self.ready_form(slug,cancelled,force=True,path=path);refreshed=True;continue
                 time.sleep(.08)
             raise SiteError('제출 후 세이브 코드를 읽지 못했어요. 사이트 결과를 확인해 주세요. 중복 전송하지 않았어요.')

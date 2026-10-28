@@ -12,7 +12,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 FORM='''<!doctype html><meta charset="utf-8"><header><button>로그아웃</button></header>
 <h1>Embedded browser test</h1><form><input name="code" minlength="9" maxlength="9"><p id="message"></p><button type="submit">인증 코드 등록</button></form>
-<section><p>내 세이브 코드</p><p id="save">AAAAABBBB</p></section>
+<section><p>내 세이브 코드</p><code id="save">AAAAABBBB</code></section>
 <script>document.querySelector('form').onsubmit=async e=>{e.preventDefault();
 const r=await fetch(location.pathname,{method:'POST',body:document.querySelector('input').value});const d=await r.json();
 const m=document.querySelector('#message');if(d.error){m.className='text-red-600';m.textContent=d.error;}
