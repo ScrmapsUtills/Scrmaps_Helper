@@ -17,17 +17,17 @@ class Worker(threading.Thread):
         self.waiting_login={}
         self.active_nickname=nickname.strip()
 
-    def remember_login(self,auth,cfg,image_hash,cancel):
+    def remember_login(self,auth,cfg,image_hash,cancel,recover=False):
         key=(cfg['project'],cfg['nickname'],auth)
-        self.waiting_login[key]={'auth':auth,'cfg':copy.deepcopy(cfg),'image_hash':image_hash,'cancel':cancel,'next':time.monotonic()+2}
+        self.waiting_login[key]={'auth':auth,'cfg':copy.deepcopy(cfg),'image_hash':image_hash,'cancel':cancel,'recover':recover,'next':time.monotonic()}
 
     def restore_login(self):
         if not self.active_nickname:return
         for row in self.history.list():
-            if row['status']=='login' and row['nickname']==self.active_nickname:
+            if row['status'] in {'login','recover_login'} and row['nickname']==self.active_nickname:
                 key=(row['project'],row['nickname'],row['auth'])
                 if key not in self.waiting_login:
-                    self.remember_login(row['auth'],{'project':row['project'],'nickname':row['nickname'],'auto':True},row['image_hash'],threading.Event())
+                    self.remember_login(row['auth'],{'project':row['project'],'nickname':row['nickname'],'auto':True},row['image_hash'],threading.Event(),recover=row['status']=='recover_login')
 
     def resume_login(self):
         for key,job in list(self.waiting_login.items()):
@@ -41,11 +41,12 @@ class Worker(threading.Thread):
         for key,job in list(self.waiting_login.items()):
             if job['cfg']['nickname']!=self.active_nickname or now<job['next']:continue
             row=self.history.get(*key)
-            if not row or row['status']!='login':
+            if not row or row['status'] not in {'login','recover_login'}:
                 self.waiting_login.pop(key,None);continue
             self.waiting_login.pop(key,None)
             self.log('로그인이 확인되어 대기 중인 인증번호를 자동으로 처리합니다.')
-            self.submit(job['auth'],job['cfg'],job['image_hash'],cancel=job['cancel'],resuming=True)
+            if job.get('recover'):self.recover_previous(job['auth'],job['cfg'],job['image_hash'],job['cancel'])
+            else:self.submit(job['auth'],job['cfg'],job['image_hash'],cancel=job['cancel'],resuming=True)
             return
 
     def emit(self, kind, **payload):
@@ -70,7 +71,7 @@ class Worker(threading.Thread):
                 try:
                     command, payload = self.commands.get(timeout=.25)
                 except queue.Empty:
-                    if time.monotonic()-self.last_session_poll>1:
+                    if time.monotonic()-self.last_session_poll>.25:
                         self.last_session_poll=time.monotonic()
                         try:
                             state=self.gateway.peek_login()
@@ -89,6 +90,8 @@ class Worker(threading.Thread):
                             raise ValueError("목록을 읽지 못했습니다. 맵 주소를 직접 입력할 수 있습니다.")
                         self.emit("maps", maps=maps)
                         self.log(f"맵 목록 {len(maps)}개를 불러왔습니다.")
+                    elif command == 'warmup':
+                        self.prepare_reader()
                     elif command == "login":
                         self.log("전용 브라우저를 여는 중입니다…")
                         self.gateway.open_login(payload["project"])
@@ -120,21 +123,27 @@ class Worker(threading.Thread):
             if self.history:
                 self.history.close()
 
+    def prepare_reader(self):
+        if self.reader is None:
+            self.log("문자 인식 엔진을 준비하는 중입니다…")
+            from recognition import Reader
+            self.reader=Reader()
+        return self.reader
+
     def process_image(self, path, cfg, cancel):
         if cancel.is_set() or self.closing.is_set():
             return
         self.log(f"스크린샷 인식 중: {Path(path).name}")
         self.emit("stage",phase="reading",text="사진에서 인증번호와 맵을 찾고 있어요…")
-        if self.reader is None:
-            self.log("문자 인식 엔진을 처음 불러오는 중입니다…")
-            from recognition import Reader
-            self.reader = Reader()
+        started=time.perf_counter();self.prepare_reader()
         before_hash = sha256_file(path)
-        result = self.reader.read(path)
+        read=getattr(self.reader,'read_fast',self.reader.read) if cfg.get('auto',True) else self.reader.read
+        result = read(path)
         if sha256_file(path) != before_hash:
             raise ValueError("인식 중 사진이 변경되었습니다. 저장이 끝난 파일을 다시 불러오세요.")
         cfg=copy.deepcopy(cfg)
-        if cfg.get("project") and result.project and cfg["project"]!=result.project:
+        mismatch=bool(cfg.get('project') and result.project and project_slug(cfg['project'])!=project_slug(result.project))
+        if mismatch:
             result.confident=False
             result.message=f"선택한 맵 /{cfg['project']}와 사진의 맵 /{result.project}가 달라요. 확인 후 제출해 주세요."
         elif not cfg.get("project"):
@@ -144,17 +153,39 @@ class Worker(threading.Thread):
             self.log(result.message)
             self.emit("stage",phase="review",text=result.message)
             return
-        self.log(f"인식: {result.code} / 신뢰 점수 {result.score:.1%}")
+        self.log(f"인식: {result.code} / OCR 평균 점수 {result.score:.1%} (정답 확률이 아닙니다)")
+        self.log(f"번호 인식 처리: {time.perf_counter()-started:.2f}초")
         if cancel.is_set() or self.closing.is_set():
             self.log("감지가 중지되어 자동 제출하지 않았습니다.")
             return
-        if cfg["auto"] and result.confident:
+        if cfg.get('auto',True) and cfg.get('project') and not mismatch:
             self.submit(result.code, cfg, before_hash, cancel=cancel)
         else:
             self.log("확인 대기: 인증번호를 확인한 뒤 ‘이 번호 제출’을 누르세요.")
             self.emit("stage",phase="review",text=result.message or "인식한 번호를 확인해 주세요.")
 
+    def recover_previous(self,auth,cfg,image_hash,cancel):
+        slug,nick=project_slug(cfg['project']),cfg['nickname'].strip()
+        if cancel.is_set() or self.closing.is_set():return
+        self.emit('stage',phase='submitting',text='사이트에 보관된 최근 세이브 코드를 읽고 있어요…')
+        try:
+            code=self.gateway.read_current(slug,lambda:cancel.is_set() or self.closing.is_set())
+        except LoginRequired as exc:
+            self.history.put(slug,nick,auth,'recover_login',detail=str(exc),image_hash=image_hash)
+            self.remember_login(auth,cfg,image_hash,cancel,recover=True)
+            self.emit('stage',phase='login',text='로그인하면 사이트에 보관된 코드를 자동으로 읽어요.')
+            self.emit('browser');self.gateway.open_login(slug)
+        except Exception as exc:
+            self.log(str(exc));self.emit('pending',auth=auth,cfg=cfg,image_hash=image_hash)
+            self.emit('stage',phase='review',text=str(exc))
+        else:
+            self.history.put(slug,nick,auth,'recovered',save=code,detail='Current account latest save read from site; no new POST.',image_hash=image_hash)
+            self.emit('save',code=code,project=slug,nickname=nick,source='existing')
+            self.log('추가 제출 없이 사이트에 보관된 최근 세이브 코드를 읽었습니다.')
+        finally:self.emit('history',rows=self.history.list())
+
     def submit(self, auth, cfg, image_hash="", retry=False, cancel=None, resuming=False):
+        started=time.perf_counter()
         cancel = cancel or threading.Event()
         slug, nick, auth = project_slug(cfg["project"]), cfg["nickname"].strip(), valid_code(auth)
         if not nick:
@@ -167,9 +198,11 @@ class Worker(threading.Thread):
         if not self.active_nickname:self.active_nickname=nick
         safe_resume=resuming and previous and previous['status']=='login'
         if previous and not retry and not safe_resume:
-            if previous["status"] == "ok":
-                self.emit("save", code=previous["save"], project=slug, nickname=nick)
+            if previous["status"] in {"ok","recovered"}:
+                self.emit("save", code=previous["save"], project=slug, nickname=nick,source='existing' if previous['status']=='recovered' else 'issued')
                 self.log("이미 처리한 인증번호입니다. 보관된 세이브 코드를 표시했습니다.")
+            elif previous['status']=='recover_login' or (previous['status'] in {'check','submitting'} and cfg.get('auto') and hasattr(self.gateway,'read_current')):
+                self.recover_previous(auth,cfg,image_hash,cancel)
             elif previous['status']=='login':
                 self.remember_login(auth,cfg,image_hash,cancel)
                 self.emit('stage',phase='login',text='앱 안에서 로그인하면 대기 중인 번호를 자동으로 처리해요.')
@@ -201,10 +234,12 @@ class Worker(threading.Thread):
             self.log(f"결과 확인 필요: {exc}")
             self.emit("stage",phase="review",text=str(exc))
         else:
-            self.history.put(slug, nick, auth, "ok", save=code, image_hash=image_hash)
-            self.emit("save", code=code, project=slug, nickname=nick)
+            existing=bool(getattr(self.gateway,'last_result_existing',False))
+            self.history.put(slug, nick, auth, "recovered" if existing else "ok", save=code, image_hash=image_hash)
+            self.emit("save", code=code, project=slug, nickname=nick,source='existing' if existing else 'issued')
             self.emit("connection",connected=True)
             self.log("발급된 세이브 코드를 보관했습니다.")
+            self.log(f"사이트 발급 처리: {time.perf_counter()-started:.2f}초")
         finally:
             self.emit("history", rows=self.history.list())
 

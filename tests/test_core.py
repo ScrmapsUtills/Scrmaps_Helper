@@ -11,6 +11,7 @@ from PIL import Image
 
 class ValidationTests(unittest.TestCase):
     def test_map_scope(self):
+        self.assertEqual(project_slug('CR2'),'cr2')
         self.assertEqual(project_slug("https://www.scrmaps.com/theking/"),"theking")
         self.assertEqual(project_slug("asdasd"),"asdasd")
         for text in ("https://evil.example/theking","https://www.scrmaps.com.evil.com/theking","https://www.scrmaps.com@evil.com/x","http://www.scrmaps.com/x","https://www.scrmaps.com:444/x","../x","api","login","https://www.scrmaps.com/x?y=1","https://www.scrmaps.com/x#z"):

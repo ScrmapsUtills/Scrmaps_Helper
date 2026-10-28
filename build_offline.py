@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import re
 from core import APP_VERSION as VERSION
 from release_files import LEGACY_DOCS,SOURCE_ROOT_FILES
 
@@ -62,7 +63,8 @@ def inventory(stage):
         omitted.update('runtime/'+x['path'] for x in json.loads(report.read_text(encoding='utf-8'))['removed'])
     return [{'path':p.relative_to(stage).as_posix(),'bytes':p.stat().st_size,'sha256':digest(p)}
             for p in sorted(stage.rglob('*')) if p.is_file() and p.name!='payload-manifest.json'
-            and p.relative_to(stage).as_posix() not in omitted]
+            and p.relative_to(stage).as_posix() not in omitted
+            and not re.fullmatch(r'\..+\.(?:dll|pyd|exe)(?:\.[A-Za-z0-9]{6})+',p.name)]
 
 def write_manifest(stage):
     manifest={'version':VERSION,'python':'3.12.10','architecture':'Windows x64',

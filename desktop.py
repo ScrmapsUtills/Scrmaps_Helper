@@ -2,10 +2,10 @@ from __future__ import annotations
 import copy,json,queue,sys,threading,time
 from pathlib import Path
 from PySide6.QtCore import Qt,QTimer,QUrl,QLockFile
-from PySide6.QtGui import QDesktopServices,QFont,QIcon,QPixmap
+from PySide6.QtGui import QDesktopServices,QFont,QIcon,QPixmap,QImageReader
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,
  QTabWidget,QComboBox,QLineEdit,QFrame,QFileDialog,QMessageBox,QCheckBox,QPlainTextEdit,QTableWidget,QTableWidgetItem,QHeaderView,QScrollArea)
-from core import NewFiles,project_slug,valid_code,write_json,IMAGE_EXTS
+from core import NewFiles,project_slug,valid_code,write_json,IMAGE_EXTS,APP_VERSION
 from paths import ROOT,DATA,default_folder
 from worker import Worker
 from web_gateway import fetch_maps
@@ -15,7 +15,7 @@ from key_sender import CodeTyper,HotkeyMonitor,make_keyboard
 from theme import STYLE
 
 AUTO='자동 인식 · 사진에서 맵 찾기'
-DEFAULTS={'folder':'','project':'','auto_map':True,'nickname':'','auto':True,'recursive':True,'maps':[]}
+DEFAULTS={'folder':'','project':'','auto_map':True,'nickname':'','auto':True,'auto_submit_policy':1,'recursive':True,'maps':[]}
 
 LEGACY_STYLE='''
 QWidget { background:#101722; color:#e9f1fc; font-family:"Malgun Gothic","Noto Sans CJK KR"; font-size:14px; }
@@ -66,6 +66,8 @@ class Window(QMainWindow):
         try:
             saved=json.loads((self.data/'settings.json').read_text(encoding='utf-8'))
             self.cfg.update({k:v for k,v in saved.items() if k in DEFAULTS})
+            if saved.get('auto_submit_policy')!=1:self.cfg['auto']=True
+            self.cfg['auto_submit_policy']=1
         except (OSError,ValueError,TypeError):pass
         if not self.cfg['folder'] or not Path(self.cfg['folder']).is_dir():self.cfg['folder']=default_folder()
         self.events=queue.Queue();self.commands=queue.Queue(maxsize=80);self.closing=threading.Event()
@@ -81,10 +83,10 @@ class Window(QMainWindow):
         header=QHBoxLayout();header.setSpacing(14)
         logo=QLabel();logo.setFixedSize(52,52);logo.setPixmap(QPixmap(str(ROOT/'assets'/'helper.png')).scaled(52,52,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation));header.addWidget(logo)
         brand=QVBoxLayout();brand.setSpacing(3);brand.addWidget(label('SCRMaps Helper','brand'));brand.addWidget(label('스크린샷으로 저장하고, F8로 간편하게 입력하세요.','hint'));header.addLayout(brand,1)
-        header.addWidget(label('v1.4.5','badge'));self.login_button=button('앱에서 로그인',self.login);header.addWidget(self.login_button);body.addLayout(header)
+        header.addWidget(label('v'+APP_VERSION,'badge'));self.login_button=button('앱에서 로그인',self.login);header.addWidget(self.login_button);body.addLayout(header)
         self.tabs=QTabWidget();body.addWidget(self.tabs,1)
         save_page=QWidget();save_layout=QVBoxLayout(save_page);save_layout.setContentsMargins(0,16,0,0);save_layout.setSpacing(14)
-        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(save_page);self.tabs.addTab(scroll,'자동 저장')
+        scroll=QScrollArea();self.save_scroll=scroll;scroll.setWidgetResizable(True);scroll.setWidget(save_page);self.tabs.addTab(scroll,'자동 저장')
         choices=QHBoxLayout();choices.setSpacing(16);left=QVBoxLayout();left.addWidget(label('플레이할 맵','hint'));self.project=QComboBox();self.project.setEditable(True);left.addWidget(self.project);choices.addLayout(left,3)
         right=QVBoxLayout();right.addWidget(label('게임 닉네임','hint'));self.nickname=QLineEdit(self.cfg['nickname']);self.nickname.setPlaceholderText('스타에서 사용하는 닉네임');right.addWidget(self.nickname);choices.addLayout(right,2);save_layout.addLayout(choices)
         self.set_maps(self.cfg['maps']);self.project.setCurrentText(AUTO if self.cfg['auto_map'] else self.cfg['project'])
@@ -99,6 +101,8 @@ class Window(QMainWindow):
         self.typing_status=label('스타의 코드 입력 칸에서 F8을 누르면 코드 입력 후 Enter를 두 번 누릅니다.','hint');result.addWidget(self.typing_status)
         self.hotkey_status=label('F8/F9 감지 확인 중…','hint');result.addWidget(self.hotkey_status)
         self.review,review=card(save_layout);self.review_label=label('인식 결과 확인','hint');review.addWidget(self.review_label)
+        self.ocr_preview=QLabel();self.ocr_preview.setAlignment(Qt.AlignmentFlag.AlignCenter);self.ocr_preview.setMaximumHeight(130);review.addWidget(self.ocr_preview)
+        self.auth_candidates=QComboBox();self.auth_candidates.setToolTip('실제로 인식된 후보입니다. 확대 원본과 비교한 뒤 선택하세요.');self.auth_candidates.activated.connect(lambda index:self.auth.setText(self.auth_candidates.itemText(index)));review.addWidget(self.auth_candidates);self.auth_candidates.hide()
         row=QHBoxLayout();self.auth=QLineEdit();self.auth.setPlaceholderText('인증번호');self.review_project=QLineEdit();self.review_project.setPlaceholderText('맵 주소');row.addWidget(self.auth,2);row.addWidget(self.review_project,2);row.addWidget(button('확인 후 제출',lambda:self.manual_submit(False)));row.addWidget(button('결과 확인 후 재제출',lambda:self.manual_submit(True)));review.addLayout(row);self.review.hide()
         self.last_image=label('사진을 이 창으로 끌어다 놓아도 인식할 수 있어요. 영역 지정은 필요하지 않습니다.','hint');save_layout.addWidget(self.last_image);save_layout.addStretch()
         kwargs={'base':base} if base else {}
@@ -107,13 +111,13 @@ class Window(QMainWindow):
         self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['시간','맵','닉네임','세이브 코드','상태']);self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch);self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows);self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers);self.table.cellClicked.connect(self.select_history);layout.addWidget(self.table,1);layout.addWidget(button('선택한 코드 보기',lambda:self.tabs.setCurrentIndex(0)));self.tabs.addTab(history,'보관 기록')
         self.table.setAlternatingRowColors(True);self.table.verticalHeader().hide();self.table.verticalHeader().setDefaultSectionSize(42);self.table.setShowGrid(False)
         settings=QWidget();layout=QVBoxLayout(settings);layout.addWidget(label('스크린샷 저장 폴더'));row=QHBoxLayout();self.folder=QLineEdit(self.cfg['folder']);row.addWidget(self.folder,1);self.folder_button=button('변경',self.choose_folder);row.addWidget(self.folder_button);layout.addLayout(row)
-        self.auto=QCheckBox('확실히 읽힌 번호 자동 제출');self.auto.setChecked(self.cfg['auto']);layout.addWidget(self.auto)
+        self.auto=QCheckBox('사진에서 읽은 번호를 확인 없이 바로 제출');self.auto.setChecked(self.cfg['auto']);layout.addWidget(self.auto)
         self.recursive=QCheckBox('스크린샷 하위 폴더도 확인');self.recursive.setChecked(self.cfg['recursive']);layout.addWidget(self.recursive)
         layout.addWidget(label('로그인 전 번호는 기다렸다가 로그인 완료 후 자동 처리합니다. 전송 후 결과가 불확실한 번호는 반복 제출하지 않습니다.','hint'))
         layout.addWidget(label('이 버전에서는 앱 안에서 최초 한 번 로그인하세요. 일반 크롬·엣지 로그인은 자동으로 가져오지 않습니다.','hint'))
         row=QHBoxLayout();row.addWidget(button('맵 목록 새로고침',self.refresh_maps));row.addWidget(button('기록 폴더 열기',lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.data)))));row.addStretch();layout.addLayout(row)
         layout.addWidget(button('키 입력 권한 확인',self.keyboard_permissions))
-        layout.addWidget(label('Helper 1.4.5 · OCR과 내장 브라우저가 설치 파일에 포함됩니다.','hint'))
+        layout.addWidget(label('Helper '+APP_VERSION+' · OCR과 내장 브라우저가 설치 파일에 포함됩니다.','hint'))
         self.logs=QPlainTextEdit();self.logs.setReadOnly(True);self.logs.setMaximumBlockCount(500);layout.addWidget(self.logs,1);self.tabs.addTab(settings,'설정')
         self.config_widgets=[self.project,self.nickname,self.folder,self.folder_button,self.auto,self.recursive]
         for widget in (self.nickname,self.folder,self.code,self.auth,self.review_project,self.project.lineEdit()):widget.setAcceptDrops(False)
@@ -124,7 +128,8 @@ class Window(QMainWindow):
         # storage global in tests or embedding private browser data in exports.
         self.worker.data_path=self.data
         self.worker.start()
-        self.timer=QTimer(self);self.timer.timeout.connect(self.drain);self.timer.start(100)
+        self.command('warmup')
+        self.timer=QTimer(self);self.timer.timeout.connect(self.drain);self.timer.start(50)
         self.log('내장 브라우저로 로그인과 코드 발급을 처리합니다. 로그인 대기는 자동으로 이어집니다.')
         if sys.platform in {'win32','darwin'}:QTimer.singleShot(0,self.register_hotkeys)
         else:self.hotkey_status.setText('이 운영체제의 자동 입력은 지원하지 않습니다.')
@@ -175,6 +180,7 @@ class Window(QMainWindow):
     def stage(self,phase,text):
         names={'ready':'준비','watching':'스크린샷 대기 중','reading':'사진을 읽고 있어요','submitting':'세이브 코드를 가져오는 중','login':'로그인 대기 · 완료 후 자동 처리','review':'확인이 필요해요','done':'저장이 완료됐어요','stopped':'자동 저장 중지'}
         self.phase.setText(names.get(phase,'준비'));self.status.setText(text);self.review.setVisible(phase=='review')
+        if phase=='review':QTimer.singleShot(0,lambda:self.save_scroll.ensureWidgetVisible(self.review))
         active={'ready':0,'watching':0,'reading':1,'submitting':2,'done':2}.get(phase,-1)
         for index,chip in enumerate(self.steps):
             chip.setProperty('active',index==active);chip.style().unpolish(chip);chip.style().polish(chip)
@@ -242,11 +248,12 @@ class Window(QMainWindow):
             self.clear_code();self.command('submit',{'auth':auth,'cfg':cfg,'image_hash':self.pending_hash,'retry':retry})
         except ValueError as exc:QMessageBox.information(self,'번호 확인',str(exc))
 
-    def display_save(self,code,project,nickname):
+    def display_save(self,code,project,nickname,source='issued'):
         self.typer.stop()
-        self.current_save=code;self.code.setText(code);self.save_label.setText(f'발급된 세이브 코드 · /{project} · {nickname}')
+        title='사이트에 보관된 세이브 코드' if source=='existing' else '발급된 세이브 코드'
+        self.current_save=code;self.code.setText(code);self.save_label.setText(f'{title} · /{project} · {nickname}')
         self.code.setToolTip(code)
-        self.copy_button.setEnabled(True);self.typer_button.setEnabled(True);self.stage('done','발급된 코드를 보관했어요. 다음 스크린샷도 계속 처리합니다.');self.tabs.setCurrentIndex(0)
+        self.copy_button.setEnabled(True);self.typer_button.setEnabled(True);self.stage('done','사이트의 최근 코드를 읽었어요.' if source=='existing' else '발급된 코드를 보관했어요. 다음 스크린샷도 계속 처리합니다.');self.tabs.setCurrentIndex(0)
 
     def copy_code(self):
         if self.current_save:
@@ -290,9 +297,10 @@ class Window(QMainWindow):
 
     def select_history(self,row,_column):
         if not 0<=row<len(self.rows):return
+        self.ocr_preview.clear();self.auth_candidates.clear();self.auth_candidates.hide()
         item=self.rows[row];self.auth.setText(item['auth']);self.review_project.setText(item['project']);self.pending_hash=item['image_hash'];self.pending_cfg={'project':item['project'],'nickname':item['nickname']}
-        if item['save']:self.display_save(item['save'],item['project'],item['nickname'])
-        elif item['status']=='login':self.stage('login','로그인이 끝나면 이 번호를 자동으로 처리해요.');self.show_browser()
+        if item['save']:self.display_save(item['save'],item['project'],item['nickname'],source='existing' if item['status']=='recovered' else 'issued')
+        elif item['status'] in {'login','recover_login'}:self.stage('login','로그인이 끝나면 이 번호를 자동으로 처리해요.');self.show_browser()
         else:self.clear_code();self.stage('review',item['detail'] or '사이트의 이전 처리 결과를 확인해 주세요.')
 
     def drain(self):
@@ -309,10 +317,16 @@ class Window(QMainWindow):
                 elif kind=='maps':self.set_maps(p['maps']);self.persist()
                 elif kind=='recognition':
                     result=p['result'];self.clear_code();self.pending_cfg=p['cfg'];self.pending_hash=p['image_hash'];self.auth.setText(result.code);self.review_project.setText(p['cfg'].get('project',''));self.review_label.setText(result.message or '번호와 맵을 확인해 주세요.');self.last_image.setText(f"최근 사진: {Path(p['path']).name} · 번호: {result.code or '확인 필요'} · 맵: {result.project or '확인 필요'}")
+                    self.ocr_preview.clear();self.auth_candidates.clear();self.auth_candidates.addItems(result.alternatives);self.auth_candidates.setVisible(len(result.alternatives)>1)
+                    if result.box:
+                        image_reader=QImageReader(p['path']);image_reader.setAutoTransform(True);image=QPixmap.fromImage(image_reader.read())
+                        if not image.isNull():
+                            x,y,w,h=result.box;crop=image.copy(max(0,x-4),max(0,y-4),w+8,h+8)
+                            self.ocr_preview.setPixmap(crop.scaled(680,120,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.FastTransformation))
                 elif kind=='pending':self.pending_cfg=p['cfg'];self.pending_hash=p['image_hash'];self.auth.setText(p['auth']);self.review_project.setText(p['cfg'].get('project',''))
                 elif kind=='save':self.display_save(**p)
                 elif kind=='history':
-                    self.rows=p['rows'];self.table.setRowCount(len(self.rows));names={'ok':'발급 완료','login':'로그인 대기','check':'결과 확인','submitting':'처리 확인','paused':'중지됨'}
+                    self.rows=p['rows'];self.table.setRowCount(len(self.rows));names={'ok':'발급 완료','recovered':'사이트 코드 복구','recover_login':'코드 복구 · 로그인 대기','login':'로그인 대기','check':'결과 확인','submitting':'처리 확인','paused':'중지됨'}
                     for i,item in enumerate(self.rows):
                         for j,key in enumerate(['created','project','nickname','save','status']):self.table.setItem(i,j,QTableWidgetItem(names.get(item[key],item[key]) if key=='status' else item[key]))
                 elif kind=='fatal':QMessageBox.critical(self,'프로그램 오류',p['text'])

@@ -8,7 +8,7 @@
 4. Windows는 고정된 공식 Python ZIP과 Windows 휠을 해시 검사하여 오프라인 Setup을 만듭니다.
 5. Windows 서버에서 Setup을 설치하고, 동봉된 OCR·브라우저 자체 검사를 실행합니다.
 6. Actions 결과의 `installer-*`를 내려받습니다. Mac DMG 안의 앱을 Applications로 옮겨 실행합니다.
-7. 앱 버전과 동일한 `v1.4.5` 태그를 올리면 성공한 결과로 초안 Release를 만듭니다.
+7. 앱 버전과 동일한 `v1.4.7` 태그를 올리면 성공한 결과로 초안 Release를 만듭니다.
    게임·로그인·권한 동작을 확인한 후 Publish합니다.
 
 이 작업 파일은 다른 저장소에 게시하거나 실행한 상태가 아닙니다.

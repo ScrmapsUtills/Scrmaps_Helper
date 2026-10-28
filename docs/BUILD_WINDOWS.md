@@ -1,6 +1,6 @@
-SCRMaps Helper 1.4.5 · 오프라인 Setup 빌드
+SCRMaps Helper 1.4.7 · 오프라인 Setup 빌드
 ============================================================
-산출물: SCRMapsHelper_Setup_1.4.5.exe
+산출물: SCRMapsHelper_Setup_1.4.7.exe
 설치 폴더: SCRMapsHelper.exe + app + runtime + 구성요소 고지/소스
 런처는 C/Win32, 앱은 기존 Python/Qt입니다. Python을 따로 설치하지 않고
 SCRMapsHelper.exe 프로세스가 앱 전용 python312.dll을 직접 로드하고
@@ -22,9 +22,9 @@ mingw-w64-x86-64-dev, nsis.
    cross-platform pip이 Windows 환경 마커를 놓칠 수 있어 별도로 포함합니다.
 3. offline-inputs.json의 모든 입력 파일 해시를 맞춥니다. 다른 버전으로
    갱신할 때에는 의존성 호환성과 새 입력 해시를 먼저 검증하세요.
-   기존 RapidOCR 1.4.5는 Python <3.13을 요구합니다.
+   RapidOCR 1.4.4는 Python <3.13을 요구합니다.
 4. 소스 폴더에서 실행:
-   python build_offline.py --python-zip python-3.12.10-embed-amd64.zip --wheel-dir wheels --payload stage --output SCRMapsHelper_Setup_1.4.5.exe
+   python build_offline.py --python-zip python-3.12.10-embed-amd64.zip --wheel-dir wheels --payload stage --output SCRMapsHelper_Setup_1.4.7.exe
    로컬 MinGW/NSIS는 --gcc, --windres, --tool-dir, --makensis,
    --nsis-dir 옵션으로 지정할 수 있습니다.
 5. 빌더가 앱 전용 런타임·VC 런타임 DLL·OCR 모델·Qt WebEngine을
@@ -65,7 +65,7 @@ imagegen 내장 도구로 단일 앱 아이콘을 생성했습니다.
 프롬프트: dark navy/cyan save/archive glyph with screenshot scanning corners,
 rounded square, no text, transparent outer background, readable small silhouette.
 
-1.4.5 기본 빌드는 slim_runtime.py로 필요한 Qt Python 모듈과 PE DLL
+1.4.7 기본 빌드는 slim_runtime.py로 필요한 Qt Python 모듈과 PE DLL
 의존성을 따라 남깁니다. 제작 환경에 pefile이 필요합니다(pip install pefile).
 Qt WebEngine 런타임 리소스/프로세스 및 소프트웨어 그래픽 대체 DLL은
 유지하고 디버그 리소스와 개발 도구는 제외합니다. 진단용 전체 패키지는

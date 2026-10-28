@@ -171,6 +171,7 @@ class BrowserPanel(QWidget):
         if self.nav_call:self.nav_started=True
 
     def navigation_finished(self,ok):
+        self.poll_view(self.main)
         call=self.nav_call
         if call and not self.nav_started and not ok:return
         self.nav_call=None
@@ -279,6 +280,17 @@ class BrowserBridge(QObject):
                     raise ValueError('허용되지 않은 사이트 주소예요.')
                 if p.nav_call:p.nav_call.finish(error='이전 페이지 이동을 중단했어요.')
                 p.nav_call=call;p.nav_started=False;p.load_started=True;p.main.load(url)
+            elif call.action=='prepare':
+                url=QUrl(call.payload['url'])
+                if url.scheme() not in {'https','http'} or url.host() not in p.allowed_hosts:
+                    raise ValueError('허용되지 않은 사이트 주소예요.')
+                if not call.payload.get('force') and p.main.url().toString().rstrip('/')==url.toString().rstrip('/'):
+                    call.finish({'reused':True});return
+                if p.nav_call:p.nav_call.finish(error='이전 페이지 이동을 중단했어요.');p.nav_call=None
+                def begin(_value):
+                    if self.closed or p.disposing or call.cancelled:call.finish(error='프로그램을 종료합니다.');return
+                    p.load_started=True;p.main.load(url);call.finish({'reused':False})
+                p.main.page().runJavaScript('window.__scrmapsLeavingDocument='+json.dumps(call.payload['marker']),0,begin)
             elif call.action=='evaluate':
                 if p.main.url().host() not in p.allowed_hosts:
                     call.finish('');return

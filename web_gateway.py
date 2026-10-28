@@ -54,26 +54,62 @@ def fetch_maps():
 
 # Kept separate to test against DOM fixtures reconstructed from the observed form.
 RESULT_JS = r"""() => {
-  const labels = new Set(['내 세이브 코드','Your save code','YOUR SAVE CODE','My save code']);
+  const norm=s=>s.replace(/\s+/g,'').replace(/[:：]/g,'').toLowerCase();
+  const labels = new Set(['내 세이브 코드','발급된 세이브 코드','발급 코드','Your save code','My save code','Save code'].map(norm));
+  const valid=s=>/^[A-HJ-NP-Z2-9]{5,64}$/.test(s.replace(/\s+/g,'').toUpperCase());
+  const visible=e=>e.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
+  const value=e=>(e.matches('input,textarea')?e.value:e.textContent).replace(/\s+/g,'').toUpperCase();
   const out = new Set();
-  for (const label of document.querySelectorAll('p,h2,h3,h4,span,div')) {
-    if (!labels.has(label.textContent.trim())) continue;
+  for (const label of document.querySelectorAll('p,h1,h2,h3,h4,h5,label,legend,span,div')) {
+    if (!visible(label)||label.textContent.length>120||!labels.has(norm(label.textContent))) continue;
     let box = label.parentElement;
-    for (let depth=0; box && depth<2; depth++,box=box.parentElement) {
-      if (box.textContent.length > 1600) break;
-      for (const e of box.querySelectorAll('p,code,pre,span,div')) {
-        if (e.querySelector('input,button')) continue;
-        const parent=e.parentElement;
-        if (parent && box.contains(parent) && !parent.querySelector('input,button') && /^[A-HJ-NP-Z2-9]{5,64}$/.test(parent.textContent.replace(/\s+/g,'').toUpperCase())) continue;
-        const text=e.textContent.replace(/\s+/g,'').toUpperCase();
-        if (/^[A-HJ-NP-Z2-9]{5,64}$/.test(text)) out.add(text);
+    for (let depth=0; box && depth<5; depth++,box=box.parentElement) {
+      if (box===document.body || box.textContent.length > 8000) break;
+      const semantic=Array.from(box.querySelectorAll('code,pre,samp,output,input[readonly],textarea[readonly],[data-save-code]'))
+        .filter(e=>visible(e)&&valid(value(e)));
+      const outer=semantic.filter(e=>!semantic.some(p=>p!==e&&p.contains(e)));
+      if(outer.length){outer.forEach(e=>out.add(value(e)));break;}
+      const candidates=[];
+      for(const e of box.querySelectorAll('p,span,div,button')){
+        if(!visible(e)||e.querySelector('input:not([readonly]),textarea:not([readonly]),form'))continue;
+        if(e.querySelectorAll('p').length>1)continue;
+        const clone=e.cloneNode(true);
+        for(const control of clone.querySelectorAll('button,svg,input,textarea')){
+          if(!control.matches('button')||!/^[A-HJ-NP-Z2-9\s]+$/.test(control.textContent))control.remove();
+        }
+        const text=clone.textContent.replace(/\s+/g,'').toUpperCase();
+        if(valid(text))candidates.push({e,text});
       }
-      if (out.size) break;
+      const maximal=candidates.filter(({e})=>!candidates.some(p=>p.e!==e&&p.e.contains(e)));
+      if(maximal.length){maximal.forEach(p=>out.add(p.text));break;}
     }
   }
   return Array.from(out);
 }"""
 
+
+COPY_RESULT_JS = r"""(token => {
+ const norm=s=>s.replace(/\s+/g,'').replace(/[:：]/g,'').toLowerCase();
+ const labels=new Set(['내 세이브 코드','발급된 세이브 코드','발급 코드','Your save code','My save code','Save code'].map(norm));
+ let button=null;
+ for(const label of document.querySelectorAll('p,h1,h2,h3,h4,h5,label,legend,span,div')){
+  if(!label.getClientRects().length||label.textContent.length>120||!labels.has(norm(label.textContent)))continue;
+  for(let box=label.parentElement,depth=0;box&&box!==document.body&&depth<5;box=box.parentElement,depth++){
+   const choices=Array.from(box.querySelectorAll('button')).filter(e=>e.getClientRects().length&&!e.disabled&&!(e.type==='submit'&&e.closest('form'))&&/복사|copy/i.test((e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+e.textContent));
+   if(choices.length===1){button=choices[0];break;}
+  }
+  if(button)break;
+ }
+ if(!button||!navigator.clipboard)return false;
+ try{
+  window.__scrmapsRestoreCopy?.();
+  const clip=navigator.clipboard,descriptor=Object.getOwnPropertyDescriptor(clip,'writeText');
+  const capture=text=>{const code=String(text).replace(/\s+/g,'').toUpperCase();if(/^[A-HJ-NP-Z2-9]{5,64}$/.test(code))window.__scrmapsCopiedCode={token,code};return Promise.resolve();};
+  const restore=()=>{if(clip.writeText!==capture)return;if(descriptor)Object.defineProperty(clip,'writeText',descriptor);else delete clip.writeText;};
+  Object.defineProperty(clip,'writeText',{configurable:true,writable:true,value:capture});
+  window.__scrmapsRestoreCopy=restore;setTimeout(restore,1200);button.click();return true;
+ }catch(_error){return false;}
+})"""
 
 class Gateway:
     def __init__(self, profile):

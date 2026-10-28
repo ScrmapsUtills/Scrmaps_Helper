@@ -13,7 +13,7 @@ from build_offline import ROOT,VERSION,digest,run,sources_zip
 from release_files import LEGACY_DOCS
 
 FILES=('SCRMapsHelper.exe','app/desktop.py','app/browser_panel.py','app/embedded_gateway.py',
-       'app/worker.py','app/core.py','SCRMapsHelper_Source.zip','.scrmaps-payload','payload-manifest.json')
+       'app/worker.py','app/core.py','app/recognition.py','app/web_gateway.py','app/self_test.py','SCRMapsHelper_Source.zip','.scrmaps-payload','payload-manifest.json')
 REMOVED_FILES=LEGACY_DOCS
 
 def updated_manifest(original,patch):
@@ -36,21 +36,21 @@ def install_commands():
         destination='$INSTDIR'+('\\'+parent if parent!='.' else '')
         lines.extend([
             'ClearErrors',
-            'Rename "$INSTDIR\\'+path+'" "$INSTDIR\\'+path+'.scrmaps-v145-backup"',
+            'Rename "$INSTDIR\\'+path+'" "$INSTDIR\\'+path+'.scrmaps-v147-backup"',
             'IfErrors rollback',
             'CopyFiles /SILENT "$PLUGINSDIR\\new\\'+path+'" "'+destination+'"',
             'IfErrors rollback'])
     for name in REMOVED_FILES:
         path=name.replace('/','\\')
         lines.extend(['${If} ${FileExists} "$INSTDIR\\'+path+'"',' ClearErrors',
-                      ' Rename "$INSTDIR\\'+path+'" "$INSTDIR\\'+path+'.scrmaps-v145-backup"',
+                      ' Rename "$INSTDIR\\'+path+'" "$INSTDIR\\'+path+'.scrmaps-v147-backup"',
                       ' IfErrors rollback','${EndIf}'])
     return '\n'.join(lines)
 
 def rollback_commands():
     lines=[]
     for name in reversed(FILES+REMOVED_FILES):
-        path=name.replace('/','\\');backup='$INSTDIR\\'+path+'.scrmaps-v145-backup'
+        path=name.replace('/','\\');backup='$INSTDIR\\'+path+'.scrmaps-v147-backup'
         lines.extend(['${If} ${FileExists} "'+backup+'"',
                       ' ClearErrors',' Delete "$INSTDIR\\'+path+'"',' ClearErrors',
                       ' Rename "'+backup+'" "$INSTDIR\\'+path+'"',
@@ -70,10 +70,10 @@ def make_script(patch,output):
             ' Abort','${EndIf}'])
     for name in FILES+REMOVED_FILES:
         path=name.replace('/','\\')
-        checks.extend(['${If} ${FileExists} "$INSTDIR\\'+path+'.scrmaps-v145-backup"',
+        checks.extend(['${If} ${FileExists} "$INSTDIR\\'+path+'.scrmaps-v147-backup"',
             ' MessageBox MB_OK|MB_ICONSTOP "이전 업데이트 백업이 남아 있습니다. 설치 폴더의 백업을 확인한 뒤 복구하세요."',
             ' Abort','${EndIf}'])
-        cleanup.append('Delete "$INSTDIR\\'+path+'.scrmaps-v145-backup"')
+        cleanup.append('Delete "$INSTDIR\\'+path+'.scrmaps-v147-backup"')
     return (template.replace('@OUTPUT@',str(output.resolve()).replace('$','$$'))
             .replace('@CHECKS@','\n'.join(checks)).replace('@EXTRACT@','\n'.join(extract))
             .replace('@INSTALL@',install_commands()).replace('@CLEANUP@','\n'.join(cleanup))
@@ -101,7 +101,7 @@ def main():
     run([tools/'x86_64-w64-mingw32-gcc-posix','-std=c11','-Wall','-Wextra','-Werror','-O2',
          '-municode','-mwindows','-static','-static-libgcc','-finput-charset=UTF-8',
          ROOT/'offline_launcher.c',resource,'-o',patch/'SCRMapsHelper.exe','-luser32','-lshell32'],env=env)
-    for name in ('desktop.py','browser_panel.py','embedded_gateway.py','worker.py','core.py'):
+    for name in ('desktop.py','browser_panel.py','embedded_gateway.py','worker.py','core.py','recognition.py','web_gateway.py','self_test.py'):
         shutil.copy2(ROOT/name,patch/'app'/name)
     (patch/'.scrmaps-payload').write_text(VERSION,encoding='ascii')
     sources_zip(patch/'SCRMapsHelper_Source.zip')

@@ -101,9 +101,44 @@ class WorkerTests(unittest.TestCase):
         self.process(Recognition("ZQWMD4FFZ",True,.98,[],"differentmap"),"testmap")
         self.assertEqual(self.w.gateway.calls,0)
 
-    def test_uncertain_recognition_never_posts(self):
+    def test_uncertain_recognition_submits_immediately_when_auto_is_enabled(self):
         self.process(Recognition("ZQWMD4FFZ",False,.86,[],"testmap"))
+        self.assertEqual(self.w.gateway.calls,1)
+
+    def test_missing_map_never_posts_an_unrouted_code(self):
+        self.process(Recognition('ZQWMD4FFZ',False,.8,[],''))
         self.assertEqual(self.w.gateway.calls,0)
+
+    def test_missing_code_does_not_submit(self):
+        self.process(Recognition(project='testmap'))
+        self.assertEqual(self.w.gateway.calls,0)
+
+    def test_auto_uses_fast_reader(self):
+        class FastReader:
+            def read(self,path):raise AssertionError('Slow verification path was used')
+            def read_fast(self,path):return Recognition('ZQWMD4FFZ',False,.8,[],'testmap')
+        self.w.reader=FastReader();path=Path(self.temp.name)/'fast.png';Image.new('RGB',(50,50)).save(path)
+        self.w.process_image(path,dict(project='',nickname='PlayerA',auto=True),threading.Event())
+        self.assertEqual(self.w.gateway.calls,1)
+
+    def test_previous_unread_issue_reads_current_code_without_another_submit(self):
+        self.w.history.put('testmap','PlayerA','ZQWMD4FFZ','check')
+        self.w.gateway.read_current=lambda slug,cancelled:'9G5C4BA5R'
+        self.w.submit('ZQWMD4FFZ',dict(self.cfg,auto=True))
+        self.assertEqual(self.w.gateway.calls,0)
+        self.assertEqual(self.w.history.get('testmap','PlayerA','ZQWMD4FFZ')['status'],'recovered')
+
+    def test_login_recovery_resumes_only_the_get_not_a_new_submission(self):
+        self.w.history.put('testmap','PlayerA','ZQWMD4FFZ','check')
+        def read_current(slug,cancelled):
+            if not self.w.gateway.logged_in:raise LoginRequired('login')
+            return '9G5C4BA5R'
+        self.w.gateway.read_current=read_current;self.w.gateway.open_login=lambda slug:None
+        self.w.submit('ZQWMD4FFZ',dict(self.cfg,auto=True))
+        self.assertEqual(self.w.history.get('testmap','PlayerA','ZQWMD4FFZ')['status'],'recover_login')
+        self.w.gateway.logged_in=True;self.w.resume_login()
+        self.assertEqual(self.w.gateway.calls,0)
+        self.assertEqual(self.w.history.get('testmap','PlayerA','ZQWMD4FFZ')['status'],'recovered')
 
     def test_login_completion_automatically_resumes_once(self):
         self.w.gateway.error=LoginRequired('login')

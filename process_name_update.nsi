@@ -8,11 +8,11 @@ OutFile "@OUTPUT@"
 RequestExecutionLevel user
 ManifestDPIAware true
 SetCompressor /SOLID lzma
-BrandingText "SCRMaps Helper 1.4.5"
-VIProductVersion "1.4.5.0"
+BrandingText "SCRMaps Helper 1.4.7"
+VIProductVersion "1.4.7.0"
 VIAddVersionKey /LANG=1042 "ProductName" "SCRMaps Helper"
 VIAddVersionKey /LANG=1042 "FileDescription" "SCRMaps Helper 배포 파일 정리 업데이트"
-VIAddVersionKey /LANG=1042 "FileVersion" "1.4.5"
+VIAddVersionKey /LANG=1042 "FileVersion" "1.4.7"
 VIAddVersionKey /LANG=1042 "LegalCopyright" "Component copyrights: see installed notices"
 !define MUI_ICON "assets/helper.ico"
 !define MUI_WELCOMEPAGE_TITLE "SCRMaps Helper 배포 정리 업데이트"
@@ -40,7 +40,7 @@ Function .onInit
  ${If} $0 != "1.4.2"
  ${AndIf} $0 != "1.4.3"
  ${AndIf} $0 != "1.4.4"
- ${AndIf} $0 != "1.4.5"
+ ${AndIf} $0 != "1.4.7"
   MessageBox MB_OK|MB_ICONSTOP "SCRMaps Helper 1.4.2 Setup을 먼저 설치한 뒤 실행하세요."
   Abort
  ${EndIf}
@@ -81,14 +81,14 @@ Section "배포 정리 업데이트"
  StrCpy $RollbackFailed 0
  @INSTALL@
  ClearErrors
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "DisplayVersion" "1.4.5"
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "DisplayVersion" "1.4.7"
  IfErrors rollback
  @CLEANUP@
  Goto done
  rollback:
  @ROLLBACK@
  ${If} $RollbackFailed == 1
-  MessageBox MB_OK|MB_ICONSTOP "업데이트 복구를 완료하지 못했습니다. Helper를 종료하고 1.4.2 Setup으로 복구하세요. 설치 폴더의 .scrmaps-v145-backup 파일을 보존해 주세요."
+  MessageBox MB_OK|MB_ICONSTOP "업데이트 복구를 완료하지 못했습니다. Helper를 종료하고 1.4.2 Setup으로 복구하세요. 설치 폴더의 .scrmaps-v147-backup 파일을 보존해 주세요."
  ${Else}
   MessageBox MB_OK|MB_ICONSTOP "파일을 교체하지 못해 기존 버전으로 되돌렸습니다. Helper를 완전히 종료한 뒤 다시 시도하세요."
  ${EndIf}

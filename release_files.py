@@ -10,5 +10,5 @@ SOURCE_ROOT_FILES={
     'build_name_update.py','slim_runtime.py','release_files.py','fetch_windows_inputs.py',
     'offline_launcher.c','offline_launcher.rc','offline_launcher.manifest',
     'installer.nsi','process_name_update.nsi','offline-inputs.json','requirements.txt',
-    'README.md','THIRD_PARTY.md','.gitignore',
+    'README.md','THIRD_PARTY.md','LICENSE','.gitignore',
 }

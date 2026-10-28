@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 BASE = "https://www.scrmaps.com"
-APP_VERSION = "1.4.5"
+APP_VERSION = "1.4.7"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".pcx", ".tga", ".webp"}
 CODE_RE = re.compile(r"[A-HJ-NP-Z2-9]{5,64}\Z")
 RESERVED = {"login", "logout", "dashboard", "api", "maps", "save-system", "terms", "privacy", "log", "users", "blog", "contact", "creator"}
@@ -40,7 +40,7 @@ def project_slug(value: str) -> str:
         value = value.strip("/")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,99}", value) or value.lower() in RESERVED:
         raise ValueError("맵 페이지 주소의 마지막 부분을 입력하세요. 예: theking")
-    return value
+    return value.lower()
 
 
 def validate_roi(values) -> tuple[float, float, float, float]:
@@ -130,6 +130,8 @@ class History:
 
     def get(self, project, nickname, auth):
         row = self.db.execute("SELECT * FROM runs WHERE project=? AND nickname=? AND auth=?", (project,nickname,auth)).fetchone()
+        if row is None:
+            row=self.db.execute('SELECT * FROM runs WHERE lower(project)=lower(?) AND nickname=? AND auth=? ORDER BY id DESC LIMIT 1',(project,nickname,auth)).fetchone()
         return dict(row) if row else None
 
     def put(self, project, nickname, auth, status, save="", detail="", image_hash=""):

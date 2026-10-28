@@ -37,6 +37,27 @@ class EmbeddedBrowserTests(unittest.TestCase):
             if condition():return
         self.fail('Embedded browser condition timed out')
 
+    def test_review_shows_original_crop_and_observed_candidates_without_submitting(self):
+        from desktop import Window
+        from recognition import Recognition
+        from worker import Worker
+        with tempfile.TemporaryDirectory() as directory,patch('desktop.fetch_maps',return_value=[]),patch.object(Worker,'start'):
+            window=Window(Path(directory),'http://127.0.0.1:9',quit_on_close=False);window.show()
+            try:
+                path=Path(__file__).parent/'fixtures'/'ocr-14.png'
+                result=Recognition('B8S5Z2G6R',False,.99,['B8S5Z2G6R','B855Z2G6R'],'testmap',(231,133,84,11),'3번째 글자를 확인해 주세요.',[3])
+                window.events.put(('recognition',dict(result=result,cfg={'project':'testmap','nickname':'PlayerA'},image_hash='fixture',path=str(path))))
+                window.events.put(('stage',dict(phase='review',text=result.message)));window.drain()
+                self.app.processEvents()
+                self.assertFalse(window.review.isHidden());self.assertFalse(window.ocr_preview.pixmap().isNull())
+                self.assertLessEqual(window.ocr_preview.pixmap().width(),680)
+                self.assertEqual(window.auth_candidates.count(),2);self.assertFalse(window.auth_candidates.isHidden())
+                self.assertEqual(window.auth.text(),'B8S5Z2G6R')
+                window.auth_candidates.activated.emit(1)
+                self.assertEqual(window.auth.text(),'B855Z2G6R');self.assertFalse(any(c[0]=='submit' for c in list(window.commands.queue)))
+            finally:
+                window.close();self.pump(lambda:window.browser.disposed,6)
+
     def test_login_resume_duplicate_guard_and_saved_session(self):
         from desktop import Window
         from PySide6.QtCore import QUrl,QCoreApplication,QEvent

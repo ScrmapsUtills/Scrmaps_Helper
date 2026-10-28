@@ -1,7 +1,16 @@
 import os,sys,json,queue,sqlite3,subprocess,tempfile,threading,time,unittest
+import errno
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+
+class CacheTemporaryDirectory(tempfile.TemporaryDirectory):
+    def cleanup(self):
+        for attempt in range(100):
+            try:return super().cleanup()
+            except OSError as exc:
+                if exc.errno!=errno.ENOTEMPTY or attempt==99:raise
+                time.sleep(.01)
 
 @unittest.skipUnless(os.environ.get('SCRMAPS_QT_TEST')=='1','Enable SCRMAPS_QT_TEST for real application shutdown tests')
 class ShutdownTests(unittest.TestCase):
@@ -13,7 +22,8 @@ class ShutdownTests(unittest.TestCase):
                 class Handler(BaseHTTPRequestHandler):
                     def log_message(self,*args):pass
                     def do_GET(self):
-                        if self.path=='/navigation':release.wait(8)
+                        if self.path=='/navigation':
+                            (data/'navigation-received').write_text('received');release.wait(8)
                         self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.end_headers()
                         try:self.wfile.write(FORM.encode())
                         except (BrokenPipeError,ConnectionResetError):pass
@@ -52,7 +62,7 @@ class ShutdownTests(unittest.TestCase):
         from browser_panel import BrowserBridge,BrowserPanel
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
         app=QApplication.instance() or QApplication([]);app.setQuitOnLastWindowClosed(False)
-        with tempfile.TemporaryDirectory() as folder:
+        with CacheTemporaryDirectory() as folder:
             panel=BrowserPanel(Path(folder));bridge=BrowserBridge(panel);result=[]
             def wait_for_browser():
                 try:bridge.call('navigate',{'url':'https://www.scrmaps.com/'},30)

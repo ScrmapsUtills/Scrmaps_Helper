@@ -111,3 +111,45 @@ only in the Setup payload. Source archive includes the generated app icon.
 - GitHub remote jobs have NOT run. No Mac DMG is supplied with this source ZIP.
   Actual Mac/Windows installer execution and signing status require the remote
   jobs and target-machine validation.
+
+
+## 1.4.6 OCR regression checks (2026-10-28 KST)
+
+- Source regression suite: 96 test cases, 95 passed, 1 skipped. The skipped case
+  is the legacy external Playwright browser suite because its Chromium binary
+  was not installed. The real Qt embedded-browser, review UI, login-resume and
+  close/reopen tests passed against local fixture pages.
+- Actual RapidOCR 1.4.4 inference: synthetic fixtures plus the externally supplied
+  game screenshot passed. OCR did not use the network during fixture inference.
+- Supplied screenshot: the 25-character code and CR2 map slug matched at original,
+  75% and 125% size. Ambiguous chunk confidence keeps this case review-only.
+  No authentication code was sent to the live site.
+- Limited 24-image synthetic comparison: old source read 21/24 correctly and
+  auto-approved 2 wrong codes; patched source read 24/24 correctly and
+  auto-approved 0 wrong codes. This is a small generated test set, not a general
+  accuracy rate or a guarantee on other game fonts/screenshots.
+- Offline self-test passed OCR model initialization, character-confidence metadata,
+  Qt WebEngine resource/subprocess use and local JavaScript evaluation.
+- Windows/macOS installers were not rebuilt or executed in this revision.
+  Source and an existing-offline-install file patch are provided. Registry and
+  old installer manifest changes require a proper rebuilt Setup upgrade.
+- No personal screenshot, actual code, browser profile, history database,
+  AppData files or new OCR model is included in the source or patch ZIP.
+
+
+## 1.4.7 automatic submit and result capture (2026-10-28 KST)
+
+108 source tests ran: 107 passed, one legacy Playwright/Chromium suite skipped.
+The Qt browser/loopback HTTP end-to-end tests passed automatic submission of
+review-flagged OCR, nested board navigation, readonly code display, copy-only
+result capture, GET refresh after confirmed success, recovery of prior unread
+results with no new POST, and rejection without displaying an old code.
+Six DOM result layouts were checked. Real-model OCR read the supplied 25-character
+image correctly on three detailed/fast comparisons; measured fast OCR 0.31-0.34s
+versus detailed 0.87-1.01s on this host. This does not include live server time.
+The local offline model and browser self-test passed, including a readonly
+save-code result field. No personal screenshot or real code is shipped.
+Actual SCRMaps account submission and native Windows installation/execution,
+macOS packaging and production code signing were not performed.
+
+An already-recorded server response also reads the saved code with a GET rather than sending another POST.

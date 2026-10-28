@@ -21,7 +21,7 @@ class ClosingWindow(OriginalWindow):
             self.test_submitted=True
             self.command('submit',{'auth':'ABCDE2345','cfg':{'project':mode,'nickname':'ShutdownPlayer','auto':True}})
         if ((mode=='idle' and ready) or
-            (mode=='navigation' and self.browser.nav_call is not None) or
+            (mode=='navigation' and (data/'navigation-received').exists()) or
             (mode=='post' and (data/'post-received').exists())):
             self.test_timer.stop()
             print('CLOSE_REQUESTED',flush=True)

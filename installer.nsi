@@ -8,7 +8,7 @@ Unicode true
  !error "Pass -DPAYLOAD=path to the prepared offline app folder"
 !endif
 !ifndef OUTPUT
- !define OUTPUT "SCRMapsHelper_Setup_1.4.5.exe"
+ !define OUTPUT "SCRMapsHelper_Setup_1.4.7.exe"
 !endif
 Name "SCRMaps Helper"
 OutFile "${OUTPUT}"
@@ -18,11 +18,11 @@ RequestExecutionLevel user
 ManifestDPIAware true
 SetCompressor /SOLID lzma
 SetCompressorDictSize 32
-BrandingText "SCRMaps Helper 1.4.5"
-VIProductVersion "1.4.5.0"
+BrandingText "SCRMaps Helper 1.4.7"
+VIProductVersion "1.4.7.0"
 VIAddVersionKey /LANG=1042 "ProductName" "SCRMaps Helper"
 VIAddVersionKey /LANG=1042 "FileDescription" "SCRMaps Helper 오프라인 설치 프로그램"
-VIAddVersionKey /LANG=1042 "FileVersion" "1.4.5"
+VIAddVersionKey /LANG=1042 "FileVersion" "1.4.7"
 VIAddVersionKey /LANG=1042 "LegalCopyright" "Component copyrights: see THIRD_PARTY_NOTICES"
 Var PreviousInstallDir
 
@@ -111,7 +111,7 @@ Section "SCRMaps Helper" Main
  CreateShortCut "$DESKTOP\SCRMaps Helper.lnk" "$INSTDIR\SCRMapsHelper.exe" "" "$INSTDIR\SCRMapsHelper.exe" 0
  WriteRegStr HKCU "Software\SCRMapsHelper" "InstallDir" "$INSTDIR"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "DisplayName" "SCRMaps Helper"
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "DisplayVersion" "1.4.5"
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "DisplayVersion" "1.4.7"
  SectionGetSize ${Main} $0
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "EstimatedSize" $0
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SCRMapsHelper" "InstallLocation" "$INSTDIR"
