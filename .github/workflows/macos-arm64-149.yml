@@ -1,0 +1,33 @@
+name: Apple Silicon installer 1.4.9
+on:
+  push:
+    branches: [codex/macos-149-arm64]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: apple-silicon-149
+  cancel-in-progress: true
+jobs:
+  macos-arm64:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Check release version and native architecture
+        run: python -c "import platform; from core import APP_VERSION; assert APP_VERSION == '1.4.9'; assert platform.machine() == 'arm64'"
+      - name: Build app, verify signature structure, run bundled OCR and browser, create DMG
+        run: python build_macos.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-macOS-arm64
+          path: |
+            release/macos/arm64/*.dmg
+            release/macos/arm64/offline-smoke-*.json
+            release/macos/arm64/release-status-*.json
+            release/macos/arm64/SHA256SUMS-*.txt
+          if-no-files-found: error
